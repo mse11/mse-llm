@@ -1,0 +1,35 @@
+SYNTHETIC test fixture in llama.cpp --help format (not a real capture). Represents a NEW build:
+the no-mmap and draft options are removed, load-mode and spec-type added, f8_e4m3 added to the cache types.
+
+----- common params -----
+
+-h,    --help, --usage                  print usage and exit
+-t,    --threads N                      number of CPU threads to use during generation (default: -1)
+                                        (env: LLAMA_ARG_THREADS)
+-c,    --ctx-size N                     size of the prompt context (default: 4096)
+-b,    --batch-size N                   logical maximum batch size (default: 2048)
+-ub,   --ubatch-size N                  physical maximum batch size (default: 512)
+-fa,   --flash-attn [on|off|auto]       set Flash Attention use ('on', 'off', or 'auto', default: 'auto')
+-ctk,  --cache-type-k TYPE              KV cache data type for K
+                                        allowed values: f32, f16, bf16, f8_e4m3, q8_0, q4_0, q4_1, iq4_nl,
+                                        q5_0, q5_1
+                                        (default: f16)
+-ctv,  --cache-type-v TYPE              KV cache data type for V
+                                        allowed values: f32, f16, bf16, f8_e4m3, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1
+                                        (default: f16)
+-lm,   --load-mode {mmap,none,dio}      how to load the model (default: mmap)
+-ngl,  --gpu-layers, --n-gpu-layers N   max. number of layers to store in VRAM, a number, 'auto' or 'all'
+-ncmoe, --n-cpu-moe N                   keep the MoE weights of the first N layers in the CPU
+--spec-type TYPE                        speculative decoding types
+                                        allowed values: draft-simple, draft-mtp, ngram-cache, ngram-mod
+--spec-draft-n-max N                    number of tokens to draft (default: 3)
+-md,   --model-draft FNAME              draft model path
+-m,    --model FNAME                    model path
+--jinja, --no-jinja                     whether to use jinja template engine for chat (default: enabled)
+--temp N                                temperature (default: 0.8)
+--top-k N                               top-k sampling (default: 40)
+--top-p N                               top-p sampling (default: 0.95)
+-rf,   --reasoning-format FORMAT        controls whether thought tags are allowed and/or extracted
+--host HOST                             ip address to listen (default: 127.0.0.1)
+--port PORT                             port to listen (default: 9931)
+-np,   --parallel N                     number of server slots (default: -1)

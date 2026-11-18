@@ -1,0 +1,133 @@
+# Plain-language explanations of llama.cpp CMake options, used by `mse-llm build show`
+# and printed before every `mse-llm build run`. Not a build profile (name starts with "_").
+#
+# Fields per flag:
+#   group    - section in the printout (build, gpu, cpu, debug)
+#   summary  - one line: what it is
+#   effect   - what it changes in the binaries / in benchmark numbers
+#   affects  - which benchmark numbers can move (pp, tg, load, vram, ram, build-time, none)
+#   default  - llama.cpp default when the flag is not passed
+#   source   - where this was verified (llama.cpp checkout a49db739f)
+#   note     - caveats (optional)
+
+schema = 1
+kind = "cmake-flags"
+
+# ───────────────────────────── build ─────────────────────────────
+
+[CMAKE_BUILD_TYPE]
+group = "build"
+summary = "Release / Debug build type."
+effect = "Ignored by the Visual Studio generator (multi-config). There `cmake --build ... --config Release` picks the optimized build."
+affects = ["none"]
+default = "unset"
+
+[CMAKE_TOOLCHAIN_FILE]
+group = "build"
+summary = "vcpkg toolchain: lets CMake find libraries installed by vcpkg (curl/openssl for -hf downloads)."
+effect = "No speed effect. Missing file = configure error."
+affects = ["none"]
+default = "unset"
+
+[LLAMA_BUILD_TESTS]
+group = "build"
+summary = "Build llama.cpp's own unit tests."
+effect = "OFF = shorter build, fewer binaries. No effect on llama-server / llama-bench."
+affects = ["build-time"]
+default = "ON for a standalone checkout"
+
+# ───────────────────────────── gpu ─────────────────────────────
+
+[GGML_CUDA]
+group = "gpu"
+summary = "Build the NVIDIA CUDA backend."
+effect = "Without it everything runs on the CPU."
+affects = ["pp", "tg", "vram"]
+default = "OFF"
+
+[CMAKE_CUDA_ARCHITECTURES]
+group = "gpu"
+summary = "Which NVIDIA GPU generations the CUDA kernels are compiled for. 89 = Ada (RTX 40xx), '-real' = native code only, no PTX fallback."
+effect = "Faster build and smaller files. The binaries only run on Ada GPUs; a different GPU needs another profile (e.g. 86-real for RTX 30xx)."
+affects = ["build-time"]
+default = "auto-detected / several architectures"
+
+[GGML_CUDA_FA_ALL_QUANTS]
+group = "gpu"
+summary = "Compile Flash Attention kernels for every K/V cache type combination."
+effect = "Required for asymmetric K/V cache configs (Kq8_Vq4, Kq4_Vq8) and q5_*/iq4_nl/f8_e4m3 with -fa on. Without it only a few same-type pairs (f16, q8_0, q4_0) get the fast path. Much longer build."
+affects = ["pp", "tg", "build-time"]
+default = "OFF"
+
+[GGML_CUDA_GRAPHS]
+group = "gpu"
+summary = "CUDA graphs: record the GPU work of one token once and replay it."
+effect = "Less CPU launch overhead per token, mainly helps TG at batch size 1."
+affects = ["tg"]
+default = "ON"
+
+[GGML_CUDA_FORCE_MMQ]
+group = "gpu"
+summary = "Use llama.cpp's own quantized matmul kernels (MMQ) even where cuBLAS would be picked."
+effect = "No effect on Turing or newer (RTX 20xx-50xx): MMQ is already always used there for quantized weights. Only matters on older GPUs (Pascal, Volta)."
+affects = ["none"]
+default = "OFF"
+source = "ggml/src/ggml-cuda/mmq.cu ggml_cuda_should_use_mmq: turing_mma_available() returns before the FORCE_MMQ check"
+note = "Not used on the RTX 4080 Laptop (variant removed 2026-11-18)."
+
+[GGML_CUDA_FORCE_CUBLAS]
+group = "gpu"
+summary = "Never use MMQ: dequantize the weights and multiply with NVIDIA cuBLAS."
+effect = "Only batched matmul (prompt processing) changes; batch <= 8 token generation uses MMVQ either way. Usually slower PP on quantized models and needs extra VRAM for dequantized copies."
+affects = ["pp", "vram"]
+default = "OFF"
+source = "mmq.cu (FORCE_CUBLAS makes should_use_mmq return false); mmvq.cu should_use_mmvq has no FORCE checks; MMVQ_MAX_BATCH_SIZE 8"
+note = "Not used on the RTX 4080 Laptop (variant removed 2026-11-18). If both FORCE flags were set, FORCE_CUBLAS wins."
+
+# ───────────────────────────── cpu ─────────────────────────────
+# The CPU backend does the work that stays on the CPU: MoE experts with -ncmoe/-cmoe,
+# --moe-cache-cpu-share misses, and layers not offloaded with -ngl. With everything on the GPU
+# these flags change almost nothing.
+
+[GGML_NATIVE]
+group = "cpu"
+summary = "Optimize the CPU code for THIS processor (auto-detect its instruction sets)."
+effect = "Faster CPU-side compute; binaries may crash with 'illegal instruction' on another PC. With MSVC the detection is ggml-cpu/cmake/FindSIMD.cmake: it test-runs AVX, AVX2 and AVX-512 (base only)."
+affects = ["pp", "tg"]
+default = "ON"
+
+[GGML_AVX512]
+group = "cpu"
+summary = "Use AVX-512: 512-bit vector instructions (16 floats per instruction instead of 8 with AVX2)."
+effect = "Wider SIMD for CPU matmul/dot products."
+affects = ["pp", "tg"]
+default = "OFF, but with GGML_NATIVE=ON + MSVC it is auto-enabled when the CPU has it"
+note = "Do not set it in a profile when GGML_NATIVE=ON: FindSIMD overrides it. CMakeCache shows OFF even when /arch:AVX512 is used. Check ggml-cpu.vcxproj or the server's system_info line instead."
+source = "ggml/src/ggml-cpu/CMakeLists.txt:288-300, ggml/src/ggml-cpu/cmake/FindSIMD.cmake:95-99"
+
+[GGML_AVX512_VNNI]
+group = "cpu"
+summary = "AVX-512 VNNI ('Vector Neural Network Instructions'): one instruction multiplies 8-bit integers and adds the results into 32-bit sums (VPDPBUSD)."
+effect = "Quantized dot products on the CPU (Q4/Q8 weights x Q8 activations) need fewer instructions. This is the one most likely to speed up CPU-side MoE expert compute (-ncmoe, -cmoe, --moe-cache-cpu-share)."
+affects = ["tg", "pp"]
+default = "OFF (MSVC never auto-detects it)"
+source = "ggml/src/ggml-cpu/arch/x86/quants.c:106,722, arch/x86/repack.cpp:124,152"
+note = "Zen 4 (Ryzen 7945HX) supports it."
+
+[GGML_AVX512_VBMI]
+group = "cpu"
+summary = "AVX-512 VBMI ('Vector Byte Manipulation Instructions'): shuffle/extract individual bytes and bit-fields in one instruction."
+effect = "In this llama.cpp version it is only used to unpack 2-bit weights (Q2_0) faster. Q4_K_M / Q4_K_XL models: practically no effect."
+affects = ["tg"]
+default = "OFF (MSVC never auto-detects it)"
+source = "ggml/src/ggml-cpu/arch/x86/quants.c:703 (q2_0_unpack), ggml-cpu.c:3683 (feature report)"
+note = "Zen 4 supports it. Harmless to enable; don't expect gains on Q4 models."
+
+[GGML_AVX512_BF16]
+group = "cpu"
+summary = "AVX-512 BF16: native instructions for bfloat16 numbers (convert + dot product)."
+effect = "Faster CPU math on BF16 tensors (BF16 model files, -ctk/-ctv bf16, llamafile sgemm). Q4/Q8 GGUFs with f16/q8 KV cache: little or no effect."
+affects = ["tg", "pp"]
+default = "OFF (MSVC never auto-detects it)"
+source = "ggml/src/ggml-cpu/llamafile/sgemm.cpp:151,378,460, vec.cpp"
+note = "Zen 4 supports it."

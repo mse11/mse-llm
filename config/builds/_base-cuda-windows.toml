@@ -1,0 +1,61 @@
+# Shared defaults for CUDA builds of llama.cpp on Windows (Visual Studio generator + vcpkg).
+# Hardware profiles extend this file and override only what differs.
+# Files starting with "_" are bases: `mse-llm build list` does not show them as buildable targets.
+
+schema = 1
+kind = "build-base"
+name = "base-cuda-windows"
+
+# Where checkouts and build dirs live. {project} = the mse-llm repo root.
+# Override per machine with the env var MSE_LLM_BUILDS_ROOT (e.g. a shorter path like D:\b
+# when Windows long paths are disabled, see `mse-llm doctor`).
+[paths]
+builds_root = "{project}/builds"     # git-ignored
+
+[source]
+repo = "https://github.com/ggml-org/llama.cpp"
+src = "{builds_root}/llama.cpp"      # cloned here by `mse-llm build run/clone` if missing
+on_missing = "clone"                 # clone | error
+clone_filter = "blob:none"           # partial clone: full history + all tags, file contents fetched on demand
+ref = "master"                       # branch, tag (e.g. b12468, v1.0.0) or commit
+allow_dirty = false
+
+# vcpkg supplies curl + openssl for llama.cpp (-hf downloads, https). Classic mode, shared by all
+# llama.cpp checkouts under builds_root. Cloned, bootstrapped and packages installed if missing.
+[vcpkg]
+root = "{builds_root}/vcpkg"
+repo = "https://github.com/microsoft/vcpkg"
+ref = "master"                       # pin a commit for reproducible dependency versions
+on_missing = "clone"                 # clone | error
+triplet = "x64-windows"
+packages = ["curl[ssl,sspi]", "openssl"]   # what the existing build uses (zlib comes with curl)
+bootstrap = ["{vcpkg_root}/bootstrap-vcpkg.bat", "-disableMetrics"]
+
+[toolchain]
+generator = "Visual Studio 17 2022"
+config = "Release"             # multi-config generator: --config is what selects Release
+jobs = 16
+vcpkg_toolchain = "{vcpkg_root}/scripts/buildsystems/vcpkg.cmake"   # absolute after expansion
+
+[toolchain.require]
+cmake = ">=3.21"
+nvcc = ">=12.4"
+msvc = "VS2022 C++ workload"
+
+# Each key becomes -D<KEY>=<VALUE>
+[cmake]
+CMAKE_BUILD_TYPE = "Release"   # ignored by VS generator, kept for single-config generators (Ninja)
+GGML_CUDA = "ON"
+GGML_CUDA_FA_ALL_QUANTS = "ON" # required for asymmetric / non-default K/V cache types with FA
+LLAMA_BUILD_TESTS = "OFF"
+
+[smoke_test]
+commands = [
+  ["{bin}/llama-server", "--version"],
+  ["{bin}/llama-bench", "--list-devices"],
+]
+
+[outputs]
+bin_dir = "{build_dir}/bin/Release"
+manifest = "{bin}/build-manifest.json"
+help_snapshot = true           # capture --help of server/bench and diff against the previous build

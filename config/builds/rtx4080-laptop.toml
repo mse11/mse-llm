@@ -1,0 +1,69 @@
+# llama.cpp build profile: NVIDIA GeForce RTX 4080 Laptop GPU (Ada, sm_89, 12 GB).
+# Equivalent of the manual build:
+#   cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89-real ^
+#         -DCMAKE_TOOLCHAIN_FILE=vcpkg\scripts\buildsystems\vcpkg.cmake -DGGML_CUDA_FA_ALL_QUANTS=ON -DLLAMA_BUILD_TESTS=OFF
+#   cmake --build build --config Release -j 16
+#
+# Usage (planned):  mse-llm build run rtx4080-laptop [--pull] [--ref REF] [--clean] [--dry-run]
+
+schema = 1
+kind = "build"
+name = "rtx4080-laptop"
+extends = "_base-cuda-windows.toml"
+build_dir = "build"            # -> <mse-llm>\builds\llama.cpp\build
+
+# Variants that are part of the DEFAULT build of this profile. Their flags stay in their own
+# [variants.<name>] table below, so they're easy to see and compare:
+#   mse-llm build run rtx4080-laptop                          -> build\                    (with zen4-avx512x)
+#   mse-llm build run rtx4080-laptop --without zen4-avx512x   -> build-without-zen4-avx512x\  (for comparison)
+apply_variants = ["zen4-avx512x"]
+
+# Which machine this profile is meant for. Only used to warn when it's built or benchmarked on
+# other hardware, and to pick this profile automatically on this laptop.
+# Everything else (VRAM, bandwidth, PCIe link, CPU instruction sets, RAM channels, driver
+# settings) is detected at runtime by `mse-llm hw` and stored with each build and run.
+[target]
+gpu_match = "RTX 4080 Laptop"   # substring of the detected GPU name (CMAKE_CUDA_ARCHITECTURES 89 = this GPU)
+cpu_match = "Ryzen 9 7945HX"    # GGML_NATIVE=ON tunes the CPU code to this CPU
+
+[source]
+ref = "master"
+# From the base: llama.cpp is cloned into <mse-llm>\builds\llama.cpp and vcpkg into
+# <mse-llm>\builds\vcpkg if missing. No checkout outside this repo is used.
+
+[cmake]
+CMAKE_CUDA_ARCHITECTURES = "89-real"   # SASS for sm_89 only, no PTX: runs on Ada GPUs only
+# Defaults observed in the reference build's CMakeCache (a49db739f), pinned here so they are explicit:
+GGML_NATIVE = "ON"
+GGML_CUDA_GRAPHS = "ON"
+# Do NOT set GGML_AVX512 here. With MSVC + GGML_NATIVE=ON, ggml-cpu/cmake/FindSIMD.cmake test-runs
+# AVX/AVX2/AVX512 code at configure time and sets GGML_AVX512 as a normal variable, which overrides
+# the cache entry. On this CPU it detects AVX512 -> the CPU backend is compiled with /arch:AVX512
+# (verified in the reference build's ggml/src/ggml-cpu.vcxproj), even though CMakeCache.txt still
+# shows the unused option default GGML_AVX512:BOOL=OFF.
+# FindSIMD does NOT detect the AVX-512 extensions (VNNI, VBMI, BF16) under MSVC; they stay OFF
+# unless set by hand -> variant "zen4-avx512x", applied by default (apply_variants above).
+
+# Engine profile that benches/serve use; updated to the new bin_dir after a successful build.
+[engine]
+name = "cuda_flash"
+runner = "llamacpp"
+host = "0.0.0.0"
+port = 8033
+
+# Variants of this profile for A/B builds (same hardware, different flags/ref).
+# Optional ones become their own target: rtx4080-laptop+<variant>, built into build-<variant>.
+# Default ones (apply_variants) are in the normal build; --without <name> builds without them.
+#
+# zen4-avx512x (DEFAULT): the AVX-512 extensions Zen 4 has but MSVC's FindSIMD never turns on.
+# Only the CPU path changes (-ncmoe / -cmoe expert compute, --moe-cache-cpu-share), so compare it
+# with `--without zen4-avx512x` on those sweeps. Not yet verified that MSVC builds cleanly with them:
+# the first `build run` shows it.
+[variants.zen4-avx512x.cmake]
+GGML_AVX512_VNNI = "ON"
+GGML_AVX512_VBMI = "ON"
+GGML_AVX512_BF16 = "ON"
+
+# Not defined on purpose: GGML_CUDA_FORCE_MMQ / GGML_CUDA_FORCE_CUBLAS. On Ada (cc 8.9) llama.cpp
+# already uses MMQ for quantized weights (FORCE_MMQ has no effect), and batch-1 generation uses
+# MMVQ regardless; FORCE_CUBLAS would only change prompt processing, usually for the worse.

@@ -221,3 +221,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# mse-llm: llama.cpp / vcpkg checkouts and build dirs created by `mse-llm build`
+/builds/
+
+# mse-llm results: tracked in git, except large raw data and runtime state (see IMPLEMENTATION_PLAN.md section 8)
+/results/raw/
+/results/servers/
+/results/tune/*/runs/

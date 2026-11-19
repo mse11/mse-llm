@@ -50,5 +50,19 @@ uv run mse-llm presets serve --dry-run                                     # run
 
 `-v` takes brace patterns; `--from FILE|-` reads a pasted bash `extras_list` (comments OK).
 
+Memory fit before running (M4, §4.6: one `llama-fit-params --fit-print` call per variant, ~1 s, no model load):
+
+```
+uv run mse-llm fit Qwen36_28B_REAP20_A3B_Q4_K_M --ctx 65536 --from - --suggest   # paste a bash extras_list
+uv run mse-llm fit gemma_4_26B_A4b_QAT_UD_Q4_K_XL                                # its default_serve(_spec)
+uv run mse-llm fit Qwen36_35B_A3B_UD_Q4_K_M -v "fa_Kq8_Vq8_default_moe{34,30,28}" --ctx 65536 --ctx 131072
+uv run mse-llm fit d:\models\X.gguf -v fa_Kq8_Vq8_b2048_ub2048_moe20 --free 11000 --mmproj d:\models\mmproj.gguf
+```
+
+Verdicts: `fits` (every part measured), `fits~` (drafter KV/compute or mmproj estimated), `TIGHT`
+(under `--margin`, default 768 MiB), `NO-FIT`, `UNSURE` (a part NOT COUNTED, e.g. an `sd*mtp` variant with no
+drafter; `--strict` exits 1). `--suggest` gives the lowest `-ncmoe` that fits, checked with extra
+llama-fit-params calls, and the largest `-ub`.
+
 Configuration: `config/config.toml` if present, else `config/config.example.toml`
 (override with `--config` or `MSE_LLM_CONFIG`).

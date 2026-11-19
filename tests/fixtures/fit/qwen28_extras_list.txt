@@ -1,0 +1,13 @@
+    local -a extras_list=(
+   "extra_fa_Kq8_Vq8_default_moe41"
+   "extra_fa_Kq8_Vq4_default_moe41"
+   "extra_fa_Kq8_Vq8_b6144_ub6144_moe41"
+   "extra_fa_Kq8_Vq4_b6144_ub6144_moe41"
+   "extra_fa_Kq8_Vq8_b4096_ub4096_moe41" # SWEETSPOT 1. step
+   "extra_fa_Kq8_Vq4_b4096_ub4096_moe41" # SWEETSPOT 1. step
+   "extra_fa_Kq8_Vq8_b4096_ub4096_moe41_sd3cache"
+   "extra_fa_Kq8_Vq4_b4096_ub4096_moe41_sd3cache"
+   "extra_fa_Kq8_Vq8_b4096_ub4096_moe41_sd2cache"
+   "extra_fa_Kq8_Vq4_b4096_ub4096_moe41_sd2cache"
+#   "extra_fa_Kq8_Vq8_b8192_ub8192_moe41" # PC freezing sporadicaly (CTX==65536)
+)

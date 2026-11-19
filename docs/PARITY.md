@@ -98,3 +98,22 @@ Every built llama-server / llama-bench argv is also checked against the engine's
   entries, `run_INSPECT_*`, `run_PRESETS_serve`, `run_HELP_*`. The help parser now also reads `--spec-type` (value list
   as metavar), `-lm` / `--reasoning-format` (bullet lists) and the `-fitt` / `-ts` list metavars; the `doctor flags`
   audit is unchanged (15 findings).
+* **M4 (2026-11-19):** `mse-llm fit GGUF_OR_MODEL` (§4.6), new (no bash equivalent). One
+  `llama-fit-params --fit off --fit-print on` call per variant × `--ctx` gives the per-device model / KV /
+  compute split (`fit.py`); a small GGUF header reader (`gguf.py`, no new dependency) gives expert-layer sizes,
+  vocab and the drafter / mmproj sizes. Parts with a source each: main = measured, n-gram spec = none, drafter
+  weights = measured (GGUF tensor bytes), drafter KV + compute = estimated, mmproj = estimated (weights; image
+  compute buffer not included), missing drafter = NOT COUNTED → `UNSURE`. Free VRAM from NVML (`--free auto`)
+  or `--free MiB`; `--kv`, `--draft`, `--mmproj`, `--margin`, `--strict`, `--json`, `--include-commented`.
+  Checked: the pasted Qwen28-REAP list gives the plan's table to the MiB (GPU, split, host, left at 11500 MiB
+  free); `sdNmtp` with no drafter → `UNSURE`; `--suggest` proposes the lower `-ncmoe` (28 for the sweet spot).
+  Tests replay recorded llama-fit-params output (`tests/fixtures/fit/record_fit.py`).
+  Differences from the plan:
+  * The drafter's weights come from its GGUF tensor sizes, not a second llama-fit-params call: llama-fit-params
+    fails on the gemma drafter alone ("Gemma4Assistant requires ctx_other"). The gemma4-assistant drafter shares
+    the main model's KV (`shared_kv_layers` = all 4 layers), so only its compute buffer is estimated.
+  * `--suggest` checks its `-ncmoe` answer with up to 6 more llama-fit-params calls (~1 s each): expert layers
+    differ in size, so the linear step is off by a layer near the margin (Qwen28: 381 vs 372 MiB per step).
+  * The drafter comes from `--draft` or `[models.*].draft`; variant names have no `md` token, and the presets
+    INI `model-draft` key is read when presets run (M5).
+  * Calibrating the estimated parts from server logs needs real runs: M5 (ServerHandle) / M7 (results store).

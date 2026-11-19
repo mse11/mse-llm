@@ -71,7 +71,7 @@ class SectionedGroup(click.Group):
     a command missing from SECTIONS shows under "Other" so nothing new gets hidden."""
 
     SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("Inference", ("serve", "presets")),
+        ("Inference", ("serve", "presets", "fit")),
         ("Benchmark", ("bench", "benchy", "eval")),
         ("System", ("doctor", "hw", "help")),
         ("Config", ("models", "variants")),
@@ -1110,6 +1110,155 @@ def eval_cmd(ctx: Ctx, model, task, patterns, ctx_, engine, dry_run) -> None:
     vs = _variants_for(ctx, model, patterns, None)
     cmds = [inspect_command(ctx.cfg, model, task, v, ctx_, engine) for v in vs]
     _show_commands(ctx, cmds, dry_run, "M12 (eval)")
+
+
+# ---------------------------------------------------------------- fit (M4, §4.6)
+
+_VERDICT_STYLE = {"fits": "green", "TIGHT": "yellow", "NO-FIT": "red", "UNSURE": "magenta", "ERROR": "red"}
+
+
+def _fit_inputs(ctx: Ctx, model: str, patterns, from_file, include_commented: bool) -> list:
+    from mse_llm import fit as ff
+    from mse_llm import variants as vv
+
+    try:
+        entries: list[tuple[str, str]] = []
+        for p in patterns:
+            entries += [(n, "") for n in vv.expand(p)]
+        if from_file:
+            text = sys.stdin.read() if from_file == "-" else Path(from_file).read_text(encoding="utf-8")
+            entries += [(e.name, e.note) for e in vv.parse_list(text, include_disabled=include_commented)]
+        if not entries:
+            try:
+                _, m = ctx.cfg.model(model)
+            except KeyError:
+                raise click.ClickException(f"{model}: give -v VARIANT or --from FILE (no [models.*] defaults "
+                                           "for a plain .gguf path)") from None
+            entries = [(n, "default_serve_spec" if n == m.default_serve_spec else "default_serve")
+                       for n in (m.default_serve, m.default_serve_spec) if n]
+            if not entries:
+                raise click.ClickException(f"{model}: no -v VARIANT and no default_serve in [models.{model}]")
+            if from_file and not include_commented:
+                console.print("[yellow]![/] every entry in the list is commented out; "
+                              "--include-commented checks them anyway. Showing the model's defaults.")
+        out, seen = [], set()
+        for name, note in entries:
+            v = vv.decode(name)
+            if v.name not in seen:
+                seen.add(v.name)
+                out.append(ff.FitInput(v, note))
+        return out
+    except vv.VariantError as e:
+        raise click.ClickException(str(e)) from e
+
+
+@main.command("fit")
+@click.argument("model", metavar="GGUF_OR_MODEL")
+@click.option("-v", "--variant", "patterns", multiple=True,
+              help="Variant name or brace pattern (repeatable). Default: the model's default_serve(_spec).")
+@click.option("--from", "from_file", type=click.Path(allow_dash=True), default=None,
+              help="Variant list from a file or - (stdin): a pasted bash extras_list, comments kept as notes.")
+@click.option("--include-commented", is_flag=True, help="Also check the #-commented entries of --from.")
+@click.option("--ctx", "ctxs", type=int, multiple=True, help="Context size (repeatable). Default: [models].ctx.")
+@click.option("--kv", default=None, metavar="K/V",
+              help="Cache types for variants that set none, e.g. q8_0/q8_0 (llama.cpp default: f16).")
+@click.option("--free", "free_", default="auto", show_default=True, metavar="auto|MiB",
+              help="Free VRAM to fit into: auto = NVML right now.")
+@click.option("--margin", type=int, default=768, show_default=True,
+              help="MiB of headroom below which a fit counts as TIGHT.")
+@click.option("--draft", default=None, metavar="PATH|builtin",
+              help="Drafter for sd*mtp variants (default: [models.*].draft).")
+@click.option("--mmproj", default=None, type=click.Path(dir_okay=False),
+              help="Count a vision projector (default: [models.*].mmproj).")
+@click.option("--suggest", is_flag=True, help="Lowest -ncmoe / largest -ub that still fits, per variant.")
+@click.option("--strict", is_flag=True, help="Exit 1 when any part is NOT COUNTED (verdict UNSURE).")
+@click.option("--engine", default=None, help="Engine whose llama-fit-params is used (default: cuda_flash).")
+@json_option
+@pass_ctx
+def fit_cmd(ctx: Ctx, model, patterns, from_file, include_commented, ctxs, kv, free_, margin, draft, mmproj,
+            suggest, strict, engine) -> None:
+    """Expected VRAM / RAM and fit per variant and context (llama-fit-params, no model load)."""
+    from mse_llm import fit as ff
+
+    inputs = [ff.FitInput(ff.apply_kv(i.variant, kv), i.note)
+              for i in _fit_inputs(ctx, model, patterns, from_file, include_commented)]
+    if str(free_).lower() == "auto":
+        free_mib, free_src = ff.free_vram_now()
+    else:
+        try:
+            free_mib, free_src = int(free_), "--free"
+        except ValueError:
+            raise click.BadParameter("auto or a number of MiB", param_hint="--free") from None
+    try:
+        if ctx.json or not sys.stdout.isatty():
+            rep = ff.run_fit(ctx.cfg, model, inputs, list(ctxs), engine=engine, free_mib=free_mib,
+                             free_source=free_src, margin_mib=margin, draft=draft, mmproj=mmproj, suggest=suggest)
+        else:
+            with console.status("llama-fit-params …") as st:
+                rep = ff.run_fit(ctx.cfg, model, inputs, list(ctxs), engine=engine, free_mib=free_mib,
+                                 free_source=free_src, margin_mib=margin, draft=draft, mmproj=mmproj,
+                                 suggest=suggest,
+                                 progress=lambda i, n, what: st.update(f"llama-fit-params {i + 1}/{n} {what}"))
+    except ff.FitError as e:
+        raise click.ClickException(str(e)) from e
+    except KeyError as e:
+        raise click.ClickException(str(e.args[0])) from e
+    if ctx.json:
+        click.echo(json.dumps(rep.as_dict(), indent=2))
+    else:
+        _print_fit(rep)
+    if rep.any_error or (strict and rep.any_uncounted):
+        sys.exit(1)
+
+
+def _print_fit(rep) -> None:
+    for w in rep.warnings:
+        console.print(f"[yellow]![/] {escape(w)}")
+    free = (f"free VRAM {rep.free_mib} MiB ({rep.free_source})" if rep.free_mib is not None
+            else f"[yellow]free VRAM unknown[/] ({rep.free_source})")
+    for c in dict.fromkeys(r.ctx for r in rep.rows):
+        rows = [r for r in rep.rows if r.ctx == c]
+        console.print(f"\nmodel [bold]{escape(Path(rep.path).name)}[/]  ctx {c}  {free}  margin {rep.margin_mib}")
+        t = Table(box=None, pad_edge=False, header_style="bold")
+        for col, just in (("VARIANT", "left"), ("GPU MiB", "right"), ("(model+KV+compute)", "right"),
+                          ("host MiB", "right"), ("left", "right"), ("VERDICT", "left"), ("NOTE", "left")):
+            t.add_column(col, justify=just, overflow="fold")
+        for r in rows:
+            v = r.verdict
+            style = _VERDICT_STYLE.get(v.rstrip("~"), "")
+            mg = r.main_gpu
+            notes = [r.note] if r.note else []
+            for p in r.parts:
+                if p.name == "main" or p.source == "not used":
+                    continue
+                if p.source == "none":
+                    notes.append(f"+{p.name}: no extra VRAM")
+                elif p.source == "NOT COUNTED":
+                    notes.append(f"+{p.name} NOT COUNTED")
+                else:
+                    notes.append(f"+{p.name} {p.gpu_mib:.0f}" + ("~" if p.source == "estimated" else ""))
+            if r.error:
+                t.add_row(escape(r.variant), "-", "", "", "", f"[red]{v}[/]", escape(r.error))
+                continue
+            t.add_row(escape(r.variant), f"{r.gpu_mib:.0f}",
+                      f"({mg.model}+{mg.context}+{mg.compute})" if mg else "", f"{r.host_mib:.0f}",
+                      "-" if r.left_mib is None else f"{r.left_mib:.0f}",
+                      f"[{style}]{v}[/]" if style else v, escape("; ".join(notes)))
+        console.print(t)
+        for r in rows:
+            extra = r.footer() + [f"→ {s}" for s in r.suggest]
+            if extra:
+                console.print(f"  [bold]{escape(r.variant)}[/]")
+                for line in extra:
+                    console.print(f"    {escape(line)}")
+    info = rep.info
+    if info and any(r.suggest for r in rep.rows):
+        console.print(f"\n[dim]{info.moe_layers} MoE layers, 1 layer = {info.expert_layer_mib:.0f} MiB, "
+                      f"1 ubatch token ≈ {info.vocab * 4 / 2**20 if info.vocab else 0:.2f} MiB "
+                      f"(n_used/n_expert = {info.n_expert_used}/{info.n_expert})[/]")
+    legend = ("fits = all parts measured · fits~ = some estimated · UNSURE = a part NOT COUNTED · "
+              f"TIGHT = under {rep.margin_mib} MiB left")
+    console.print(f"[dim]{legend}[/]")
 
 
 @main.group()

@@ -6,9 +6,9 @@
 [defaults]
 threads = 4                 # bash MSE_THREADS
 parallel = 1                # bash MSE_PARALLEL
-ngl = "all"                 # bash -ngl 999
-fit = "off"                 # benches: measured config = requested config (serve uses --fit on, §0.3)
-load_mode = "none"          # replaces the removed --no-mmap
+ngl = "all"                 # bash -ngl 999 (llama-bench gets 999: it takes numbers only)
+fit = "off"                 # bench/benchy/eval servers: measured config = requested config (serve uses --fit on, §0.3)
+load_mode = "none"          # replaces the removed --no-mmap; bash MODELS_BENCH_EXTRA["common"] = "-lm none"
 bench_tg = [128]            # bash MSE_BENCH_TG
 bench_repetitions = 1       # llama-bench -r (bash used the implicit default 5)
 server_ready_timeout = 120  # bash MSE_SERVER_READY_TIMEOUT (was 30)
@@ -18,7 +18,7 @@ output = "filter"           # all | filter | none
 
 [defaults.benchy]
 pp = [512, 2048, 8192, 32768]   # bash MSE_BENCHY_PP
-pp_sync_ctx = true              # bash MSE_BENCHY_PP_SYNCH
+pp_sync_ctx = true              # bash MSE_BENCHY_PP_SYNCH: benchy --pp = the server context
 depth = [0]                     # bash MSE_BENCHY_DEPTH
 runs = 1                        # bash MSE_BENCHY_RUNS
 version = "llama-benchy"        # pin, e.g. "llama-benchy==0.3.1", for reproducible results
@@ -26,7 +26,7 @@ version = "llama-benchy"        # pin, e.g. "llama-benchy==0.3.1", for reproduci
 # Engines: "cuda_flash" comes from config/builds/rtx4080-laptop.toml [engine]
 # (bin_dir = builds\llama.cpp\build\bin\Release). Override or add more here, for example:
 # [engines.cuda_flash]
-# help_snapshot = "a49db739f"   # folder in tests/fixtures/help/ that `doctor flags` diffs against
+# help_snapshot = "a49db739f"   # folder in tests/fixtures/help/ that `doctor flags` and command checks use
 
 [hw.checks]
 ram_warn_gb = 16
@@ -36,43 +36,90 @@ cores_pass = 8
 disk_warn_gb = 25
 disk_pass_gb = 60
 
-# Models (bash MODELS / DRAFTER_MODELS / *_EXTRA). Taken from llama_cpp_presets.ini; the full set
-# from the bash script is ported in M3 (variants) / M13 (parity).
-[models.qwen36_28B_REAP20_A3B_Q4_K_M]
-path = 'd:\.lmstudio\models\barozp\Qwen3.6-28B-REAP20-A3B-GGUF\Qwen3.6-28B-REAP20-A3B-Q4_K_M.gguf'
-alias = "Qwen3.6-28B-REAP20-A3B-Q4_K_M"
-tags = ["moe", "reasoning"]
-serve_extra = { reasoning-format = "none", temp = 0.3 }
-default_serve = "fa_Kq8_Vq8_b4096_ub4096_moe41"
+[presets]
+file = "llama_cpp_presets.ini"   # bash MSE_PRESETS_SERVE_FILE; switches to config/presets.ini in M13
 
-[models.qwen36_35B_A3B_UD_Q4_K_M_MTP]
+# Models: the bash MODELS / DRAFTER_MODELS / MODELS_SERVE_EXTRA / MODELS_BENCH_EXTRA maps (F2), with the
+# script's comments (HF URLs, sizes, capabilities, bench notes) as url / notes. Keys are the bash keys, so
+# `mse-llm serve Qwen36_28B_REAP20_A3B_Q4_K_M` is `run_SERVER_Qwen36_28B_REAP20_A3B_Q4_K_M_CTX_cuda_flash`.
+# ctx           = the runner_ctx default of the model's run_SERVER_* / run_BENCH_* functions.
+# default_serve = the variant its run_SERVER_* serves; default_serve_spec = the SD/MTP alternative (--spec).
+# alias         = the section name in llama_cpp_presets.ini (router model id).
+# serve_extra   = MODELS_SERVE_EXTRA minus "-lm none" ([defaults].load_mode), in the same order.
+
+# ---- QWEN
+[models.omnicoder_9b]
+path = 'd:\.lmstudio\models\bartowski\Tesslate_OmniCoder-9B-GGUF\Tesslate_OmniCoder-9B-Q4_K_M.gguf'
+alias = "Tesslate_OmniCoder-9B-Q4_K_M"
+url = "https://huggingface.co/bartowski/Tesslate_OmniCoder-9B-GGUF"
+tags = ["dense", "tool", "code"]
+ctx = 131072
+serve_extra = { jinja = true, reasoning-format = "none", temp = 0.3 }
+default_serve = "fa_Kq8_Vq8_default"
+notes = "9B dense, native ctx 262,144. Based on Qwen3.5-9B, retrained for coding agents (native small diff patches)."
+
+[models.Qwen36_35B_A3B_UD_Q4_K_M]
+path = 'd:\.lmstudio\models\unsloth\Qwen3.6-35B-A3B-GGUF\Qwen3.6-35B-A3B-UD-Q4_K_M.gguf'
+alias = "Qwen3.6-35B-A3B-UD-Q4_K_M"
+url = "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF"
+tags = ["moe", "tool"]
+ctx = 65536
+serve_extra = { jinja = true, reasoning-format = "none", temp = 0.3 }
+default_serve = "fa_Kq8_Vq8_default_moe34"   # the commented-out INI section had -ctv turbo4 (dropped) -> Vq8
+notes = "23.9 GB file."
+
+[models.Qwen36_35B_A3B_UD_Q4_K_M_MTP]
 path = 'd:\.lmstudio\models\unsloth\Qwen3.6-35B-A3B-MTP-GGUF\Qwen3.6-35B-A3B-UD-Q4_K_M.gguf'
 alias = "Qwen3.6-35B-A3B-UD-Q4_K_M-MTP"
-tags = ["moe", "reasoning", "mtp"]
-serve_extra = { reasoning-format = "none", temp = 0.3 }
-default_serve = "fa_Kq8_Vq8_moe34"
+draft = "builtin"                                        # bash DRAFTER_MODELS "BUILD-IN": MTP heads inside the GGUF
+url = "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF"
+tags = ["moe", "tool", "reasoning", "mtp"]
+ctx = 65536
+serve_extra = { jinja = true, reasoning-format = "none", temp = 0.3 }
+default_serve = "fa_Kq8_Vq8_default_moe34"
+default_serve_spec = "fa_Kq8_Vq4_default_moe34_sd2mtp"   # the commented-out alternative in run_SERVER_*
+notes = "24.1 GB file. Bench notes (ctx 65536): moe34 Vq4 SWEETSPOT; moe33 sporadic PC freezes; moe30 PC freeze."
+
+[models.Qwen36_28B_REAP20_A3B_Q4_K_M]
+path = 'd:\.lmstudio\models\barozp\Qwen3.6-28B-REAP20-A3B-GGUF\Qwen3.6-28B-REAP20-A3B-Q4_K_M.gguf'
+alias = "Qwen3.6-28B-REAP20-A3B-Q4_K_M"
+url = "https://huggingface.co/barozp/Qwen3.6-28B-REAP20-A3B-GGUF"
+tags = ["moe", "tool", "reasoning"]
+ctx = 65536
+serve_extra = { jinja = true, reasoning-format = "none", temp = 0.3 }
+default_serve = "fa_Kq8_Vq8_b4096_ub4096_moe41"
+notes = "17.26 GB file. Bench notes (ctx 65536): b4096_ub4096 SWEETSPOT; b8192_ub8192 sporadic PC freezes; moe23 Vq8 sporadic freezes (Vq4 OK); moe20 PC freeze."
+
+# ---- GLM
+[models.GLM_47_Flash_REAP_23B_A3B_Q4_K_M]
+path = 'd:\.lmstudio\models\unsloth\GLM-4.7-Flash-REAP-23B-A3B-GGUF\GLM-4.7-Flash-REAP-23B-A3B-Q4_K_M.gguf'
+alias = "GLM-4.7-Flash-REAP-23B-A3B-Q4_K_M"
+url = "https://huggingface.co/unsloth/GLM-4.7-Flash-REAP-23B-A3B-GGUF"
+tags = ["moe", "tool"]
+ctx = 65536
+serve_extra = { jinja = true, reasoning-format = "none", temp = 0.3 }
+default_serve = "fa_Kq8_Vq8_b4096_ub4096_moe49"   # from the first run_SERVER_gemma_4_26B_A4b_UD_Q4_K_M_* (it served GLM, §0.1)
+notes = "47 MoE layers (plus an extra MTP layer: 48 blocks in some configs). Bench notes (ctx 65536): b6144/b8192 sporadic PC freezes; moe23 PC freeze."
+
+# ---- GEMMA
+[models.gemma_4_26B_A4b_UD_Q4_K_M]
+path = 'd:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf'
+alias = "gemma-4-26B-A4B-it-UD-Q4_K_M"
+url = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF"
+tags = ["moe", "vision", "tool", "reasoning"]
+ctx = 65536
+serve_extra = { jinja = true, reasoning-format = "auto", temp = 1.0, top-k = 64, top-p = 0.95 }
+default_serve = "fa_Kq8_Vq8_b4096_ub4096_moe31"
+notes = "19.0 GB file. Batching works (generic quantization benefits from batched computation). Bench notes (ctx 65536): b4096_ub4096_moe31 SWEETSPOT (moe26: bad surprise); b8192 PC freeze TERRIBLE; moe18 SWEETSPOT; moe16 sporadic freezes."
 
 [models.gemma_4_26B_A4b_QAT_UD_Q4_K_XL]
 path = 'd:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-qat-GGUF\gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf'
 alias = "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL"
-draft = 'd:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-qat-GGUF\mtp-gemma-4-26B-A4B-it.gguf'
+draft = 'd:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-qat-GGUF\mtp-gemma-4-26B-A4B-it.gguf'   # https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/tree/main
 url = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF"
-tags = ["moe", "vision", "reasoning"]
-serve_extra = { reasoning-format = "auto", temp = 1.0, top-k = 64, top-p = 0.95 }
-default_serve = "fa_Kq8_Vq8_b2048_ub2048_moe16"
-default_serve_spec = "fa_Kq8_Vq8_b2048_ub2048_moe21_sd4mtp"
-notes = "Batching does NOT help (flat)."
-
-[models.gemma_4_26B_A4b_UD_Q4_K_M]
-path = 'd:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf'
-alias = "gemma-4-26B-A4B-it-UD-Q4_K_M"
-tags = ["moe", "vision", "reasoning"]
-serve_extra = { reasoning-format = "auto", temp = 1.0, top-k = 64, top-p = 0.95 }
-default_serve = "fa_Kq8_Vq8_b4096_ub4096_moe31"
-
-[models.omnicoder_9b]
-path = 'd:\.lmstudio\models\bartowski\Tesslate_OmniCoder-9B-GGUF\Tesslate_OmniCoder-9B-Q4_K_M.gguf'
-alias = "Tesslate_OmniCoder-9B-Q4_K_M"
-tags = ["dense", "code"]
-serve_extra = { reasoning-format = "none", temp = 0.3 }
-default_serve = "fa_Kq8_Vq8"
+tags = ["moe", "vision", "tool", "reasoning", "mtp"]
+ctx = 65536
+serve_extra = { jinja = true, reasoning-format = "auto", temp = 1.0, top-k = 64, top-p = 0.95 }
+default_serve = "fa_Kq8_Vq8_b2048_ub2048_moe16"              # SWEETSPOT (SD off)
+default_serve_spec = "fa_Kq8_Vq8_b2048_ub2048_moe21_sd4mtp"  # SWEETSPOT (SD on): bash SD_ENABLED=1
+notes = "16.5 GB file (Jun 9 update: added MTP support). Batching does NOT help (flat or minimal)."

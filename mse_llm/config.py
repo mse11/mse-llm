@@ -50,17 +50,22 @@ class EngineCfg(_Model):
     bin_dir: str
     host: str = "0.0.0.0"
     port: int = 8033
+    client_host: str = "localhost"     # how clients (benchy, inspect) reach the server (bash SERVERS_NET_CFG url)
     help_snapshot: str | None = None   # folder under tests/fixtures/help, e.g. "a49db739f"
     build_profile: str | None = None
 
     def bin_path(self) -> Path:
         return Path(self.bin_dir.replace("{project}", str(project_root())))
 
+    def base_url(self, port: int | None = None) -> str:
+        return f"http://{self.client_host}:{port or self.port}/v1"
+
 
 class ModelCfg(_Model):
     path: str
     alias: str | None = None
-    draft: str | None = None
+    draft: str | None = None           # drafter GGUF, or "builtin" (MTP heads in the model; bash "BUILD-IN")
+    ctx: int | None = None             # default context (bash run_SERVER_*/run_BENCH_* runner_ctx default)
     mmproj: str | None = None
     url: str | None = None
     tags: list[str] = Field(default_factory=list)
@@ -69,6 +74,22 @@ class ModelCfg(_Model):
     default_serve: str | None = None
     default_serve_spec: str | None = None
     notes: str | None = None
+
+    @property
+    def label(self) -> str:
+        """Name llama-server reports at /v1/models without --alias: the GGUF file name without .gguf."""
+        name = self.path.replace("\\", "/").rsplit("/", 1)[-1]
+        return name[:-5] if name.lower().endswith(".gguf") else name
+
+
+class PresetsCfg(_Model):
+    # relative to the repo root (bash MSE_PRESETS_SERVE_FILE); M13 switches to config/presets.ini
+    file: str = "llama_cpp_presets.ini"
+    engine: str | None = None
+
+    def path(self) -> Path:
+        p = Path(self.file)
+        return p if p.is_absolute() else project_root() / p
 
 
 class SweepCfg(_Model):
@@ -100,6 +121,7 @@ class Config(_Model):
     models: dict[str, ModelCfg] = Field(default_factory=dict)
     sweeps: dict[str, SweepCfg] = Field(default_factory=dict)
     hw: HwCfg = Field(default_factory=HwCfg)
+    presets: PresetsCfg = Field(default_factory=PresetsCfg)
     source: Path | None = Field(default=None, exclude=True)
 
     def engine(self, name: str | None = None) -> tuple[str, EngineCfg]:
@@ -110,6 +132,16 @@ class Config(_Model):
         if name not in self.engines:
             raise KeyError(f"unknown engine {name!r}; known: {', '.join(self.engines)}")
         return name, self.engines[name]
+
+    def model(self, name: str) -> tuple[str, ModelCfg]:
+        """Model by config key, case-insensitive key, or alias."""
+        if name in self.models:
+            return name, self.models[name]
+        low = name.lower()
+        for k, m in self.models.items():
+            if k.lower() == low or (m.alias and m.alias.lower() == low):
+                return k, m
+        raise KeyError(f"unknown model {name!r}; known: {', '.join(self.models) or '(none configured)'}")
 
 
 # MSE_LLM_<FIELD> overrides [defaults].<field>; MSE_LLM_BENCHY_<FIELD> overrides [defaults.benchy].

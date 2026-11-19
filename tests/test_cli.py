@@ -13,6 +13,15 @@ def test_top_level_help():
         assert cmd in r.output
 
 
+def test_top_level_help_is_sectioned():
+    """Every command shows up exactly once, under its area; nothing ends up in "Other"."""
+    r = CliRunner().invoke(main, ["--help"])
+    titles = [t for t, _ in main.SECTIONS]
+    assert [line[:-1] for line in r.output.splitlines() if line[:-1] in titles + ["Other"]] == titles
+    listed = [n for _, names in main.SECTIONS for n in names]
+    assert sorted(listed) == sorted(n for n, c in main.commands.items() if not c.hidden)
+
+
 def test_hw_json_with_fixture(hw_fixture):
     r = CliRunner().invoke(main, ["hw", "--json"])
     assert r.exit_code == 0, r.output

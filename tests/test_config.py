@@ -13,7 +13,7 @@ def test_example_config_loads():
     cfg = load_config(ROOT / "config" / "config.example.toml")
     assert cfg.defaults.threads == 4
     assert cfg.defaults.benchy.pp == [512, 2048, 8192, 32768]
-    assert len(cfg.models) == 5
+    assert len(cfg.models) == 7          # every bash MODELS entry (M3)
     name, eng = cfg.engine()
     assert name == "cuda_flash"
     assert eng.port == 8033 and eng.build_profile == "rtx4080-laptop"

@@ -32,5 +32,23 @@ uv run mse-llm build clean --logs|--builds|--all [--dry-run]   # shows sizes, as
 Binaries land in `builds\llama.cpp\build\bin\Release`, the folder the bash script's
 `MSE_LLAMA_BIN_DIR` uses. Full logs: `builds\logs\`.
 
+Variants and commands (M3: `--dry-run` shows the exact argv, checked against the llama.cpp help
+snapshot; running them arrives in M5/M7/M12):
+
+```
+uv run mse-llm models list
+uv run mse-llm variants decode extra_fa_Kq8_Vq4_b4096_ub4096_moe41_sd3cache   # fields + flags
+uv run mse-llm variants expand "fa_Kq8_Vq8_b2048_ub2048_moe21_sd{3..6}mtp"
+uv run mse-llm variants encode -- -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 2048 --n-cpu-moe 16
+uv run mse-llm serve gemma_4_26B_A4b_QAT_UD_Q4_K_XL --spec --dry-run      # run_SERVER_* (SD_ENABLED=1)
+uv run mse-llm serve --all --dry-run                                       # run_PRESETS_dump
+uv run mse-llm bench omnicoder_9b -v "extra_fa_{Vq8,Kq8_Vq4,Kq8_Vq8,Kq4_Vq8}_default" --dry-run   # run_BENCH_*
+uv run mse-llm benchy Qwen36_28B_REAP20_A3B_Q4_K_M -v fa_Kq8_Vq8_b4096_ub4096_moe41 --dry-run     # run_BENCHY_*
+uv run mse-llm eval gemma_4_26B_A4b_UD_Q4_K_M mmlu_pro --dry-run           # run_INSPECT_*
+uv run mse-llm presets serve --dry-run                                     # run_PRESETS_serve
+```
+
+`-v` takes brace patterns; `--from FILE|-` reads a pasted bash `extras_list` (comments OK).
+
 Configuration: `config/config.toml` if present, else `config/config.example.toml`
 (override with `--config` or `MSE_LLM_CONFIG`).

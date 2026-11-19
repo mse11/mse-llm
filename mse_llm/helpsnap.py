@@ -51,10 +51,23 @@ def _enum_from(spec: str, text: str) -> list[str] | None:
     m = re.search(r"allowed values:\s*([^\n(]+)", text, re.I)
     if m:
         return [v.strip() for v in m.group(1).split(",") if v.strip()]
-    m = re.search(r"[\[{<]([\w.-]+(?:[|,][\w.-]+)+)[\]}>]", spec)
+    m = re.search(r"[\[{<]([\w.+-]+(?:[|,][\w.+-]+)+)[\]}>]", spec)
     if m:
-        return [v for v in re.split(r"[|,]", m.group(1)) if v]
+        vals = [v for v in re.split(r"[|,]", m.group(1)) if v]
+        if not any(v.strip(".") == "" for v in vals):     # <dev1,dev2,..> is an example, not an enum
+            return vals
+    if _VALUE_LIST.fullmatch(spec):            # --spec-type none,draft-simple,...  (the list is the metavar)
+        return spec.split(",")
+    if re.fullmatch(r"[A-Z]+", spec):          # -lm MODE with "- auto: ...", "- none: ..." bullets
+        bullets = re.findall(r"(?:^|\s)- ([a-z][\w.+-]*):", text)
+        if len(bullets) >= 2:
+            d = re.search(r"\(default: '?([\w.+-]+)'?\)", text)   # e.g. --reasoning-format: "auto" is only the default
+            return bullets + ([d.group(1)] if d and d.group(1) not in bullets else [])
     return None
+
+
+_VALUE_LIST = re.compile(r"[a-z0-9][\w.+-]*(?:,[\w.+-]+)+")
+_METAVAR_LIST = re.compile(r"[A-Z][\w]*(?:,[\w.]+)+")     # -fitt MiB0,MiB1,..., -ts N0,N1,N2,...
 
 
 _METAVAR = re.compile(r"[A-Z][A-Z0-9_|,-]*|[\[{<].*[\]}>]")
@@ -70,7 +83,8 @@ def _split_spec(s: str) -> tuple[list[str], str, str]:
         bare = tok.rstrip(",")
         if re.fullmatch(r"--?[A-Za-z][\w.-]*", bare) and not metavar:
             names.append(bare)
-        elif names and not metavar and _METAVAR.fullmatch(bare):
+        elif names and not metavar and (_METAVAR.fullmatch(bare) or _VALUE_LIST.fullmatch(bare)
+                                        or _METAVAR_LIST.fullmatch(bare)):
             metavar = bare
         else:
             break

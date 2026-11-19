@@ -66,7 +66,35 @@ json_option = click.option("--json", "_json", is_flag=True, expose_value=False, 
                            help="Machine-readable output.")
 
 
-@click.group(context_settings={"help_option_names": ["-h", "--help"]})
+class SectionedGroup(click.Group):
+    """Root group whose --help lists the commands by area. Same names, grouped only in the help text;
+    a command missing from SECTIONS shows under "Other" so nothing new gets hidden."""
+
+    SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("Inference", ("serve", "presets")),
+        ("Benchmark", ("bench", "benchy", "eval")),
+        ("System", ("doctor", "hw", "help")),
+        ("Config", ("models", "variants")),
+        ("Build", ("build",)),
+    )
+
+    def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        cmds = {n: c for n in self.list_commands(ctx)
+                if (c := self.get_command(ctx, n)) is not None and not c.hidden}
+        if not cmds:
+            return
+        width = max(len(n) for n in cmds)       # one description column across all sections
+        limit = formatter.width - 6 - width
+        sections = [(title, [n for n in names if n in cmds]) for title, names in self.SECTIONS]
+        listed = {n for _, names in sections for n in names}
+        sections.append(("Other", [n for n in cmds if n not in listed]))
+        for title, names in sections:
+            if names:
+                with formatter.section(title):
+                    formatter.write_dl([(n.ljust(width), cmds[n].get_short_help_str(limit)) for n in names])
+
+
+@click.group(cls=SectionedGroup, context_settings={"help_option_names": ["-h", "--help"]})
 @click.option("--config", "config", type=click.Path(dir_okay=False), envvar="MSE_LLM_CONFIG",
               help="Config TOML (default: config/config.toml, else config/config.example.toml).")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
@@ -781,6 +809,331 @@ def build_explain(flags) -> None:
                 _plain(f"  {k:8} {d[k]}")
         if d.get("affects"):
             _plain(f"  affects  {', '.join(d['affects'])}")
+
+
+# ---------------------------------------------------------------- variants
+
+def _variant_names(patterns, from_file, include_commented=False) -> list[str]:
+    from mse_llm import variants as vv
+
+    names: list[str] = []
+    for p in patterns:
+        names += vv.expand(p)
+    if from_file:
+        text = sys.stdin.read() if from_file == "-" else Path(from_file).read_text(encoding="utf-8")
+        names += [e.name for e in vv.parse_list(text, include_disabled=include_commented)]
+    return names
+
+
+@main.group()
+def variants() -> None:
+    """Variant names (fa_Kq8_Vq4_b4096_ub4096_moe41_sd3cache, legacy extra_* too): decode, encode, expand."""
+
+
+@variants.command("decode")
+@json_option
+@click.argument("names", nargs=-1, required=True)
+@click.option("--tool", type=click.Choice(["server", "bench"]), default="server", show_default=True)
+@click.option("--model", default=None, help="Model whose drafter fills --model-draft for sd*mtp.")
+@pass_ctx
+def variants_decode(ctx: Ctx, names, tool, model) -> None:
+    """Show the fields and llama.cpp flags of variant names (brace patterns allowed)."""
+    from mse_llm import variants as vv
+
+    draft = ctx.cfg.model(model)[1].draft if model else None
+    out, failed = [], False
+    for pat in names:
+        for n in vv.expand(pat):
+            row: dict = {"input": n}
+            try:
+                v = vv.decode(n)
+                flags, warn = v.flags(tool, draft=draft)
+                row |= {"name": v.name, "fields": v.as_dict(), "flags": flags, "warnings": warn}
+            except vv.VariantError as e:
+                row["error"] = str(e)
+                failed = True
+            out.append(row)
+    if ctx.json:
+        click.echo(json.dumps(out, indent=2))
+    else:
+        for r in out:
+            if "error" in r:
+                console.print(f"[red]✗[/] {escape(r['input'])}: {escape(r['error'])}")
+                continue
+            same = "" if r["name"] == r["input"] else f"  [dim](canonical {r['name']})[/]"
+            console.print(f"[bold]{escape(r['input'])}[/]{same}")
+            _plain("  " + (" ".join(r["flags"]) or "(no flags)"))
+            for w in r["warnings"]:
+                console.print(f"  [yellow]![/] {escape(w)}")
+    sys.exit(1 if failed else 0)
+
+
+@variants.command("encode", context_settings={"ignore_unknown_options": True})
+@json_option
+@click.argument("flags", nargs=-1, type=click.UNPROCESSED, required=True)
+@pass_ctx
+def variants_encode(ctx: Ctx, flags) -> None:
+    """Variant name for llama.cpp flags, e.g. `variants encode -- -fa on -ctk q8_0 -b 2048 -ub 2048 -ncmoe 16`."""
+    from mse_llm import variants as vv
+
+    v, rest = vv.from_flags(list(flags))
+    if ctx.json:
+        click.echo(json.dumps({"name": v.name, "fields": v.as_dict(), "ignored": rest}, indent=2))
+        return
+    _plain(v.name)
+    if rest:
+        console.print(f"[dim]not part of a variant: {escape(' '.join(rest))}[/]")
+
+
+@variants.command("expand")
+@json_option
+@click.argument("patterns", nargs=-1)
+@click.option("--from", "from_file", type=click.Path(allow_dash=True), default=None,
+              help="Read names from a file or - (stdin): one per line, pasted bash arrays and # comments OK.")
+@click.option("--include-commented", is_flag=True, help="Also the commented-out entries of a pasted bash array.")
+@click.option("--sweep", default=None, help="The variants of [sweeps.NAME] (names + matrix).")
+@pass_ctx
+def variants_expand(ctx: Ctx, patterns, from_file, include_commented, sweep) -> None:
+    """Expand brace patterns (moe{18,21}_sd{3..5}mtp), pasted lists or a sweep into canonical names."""
+    from mse_llm import variants as vv
+
+    try:
+        names = _variant_names(patterns, from_file, include_commented)
+        vs = vv.resolve(names)
+        if sweep:
+            sw = ctx.cfg.sweeps.get(sweep)
+            if sw is None:
+                raise click.ClickException(f"unknown sweep {sweep!r}; known: {', '.join(ctx.cfg.sweeps) or '-'}")
+            vs += [v for v in vv.resolve(sw.variants, sw.matrix) if v.name not in {x.name for x in vs}]
+    except vv.VariantError as e:
+        raise click.ClickException(str(e)) from e
+    if ctx.json:
+        click.echo(json.dumps([v.name for v in vs], indent=2))
+    else:
+        for v in vs:
+            _plain(v.name)
+
+
+# ---------------------------------------------------------------- models
+
+@main.group()
+def models() -> None:
+    """Configured models ([models.*], bash MODELS / DRAFTER_MODELS / *_EXTRA)."""
+
+
+@models.command("list")
+@json_option
+@pass_ctx
+def models_list(ctx: Ctx) -> None:
+    ms = ctx.cfg.models
+    if ctx.json:
+        data = {k: m.model_dump() | {"exists": Path(m.path).is_file()} for k, m in ms.items()}
+        click.echo(json.dumps(data, indent=2))
+        return
+    t = Table(title="models", expand=False)
+    for col in ("name", "file", "ctx", "draft", "default_serve"):
+        t.add_column(col, overflow="fold")
+    for k, m in ms.items():
+        draft = "-" if not m.draft else ("builtin" if m.draft == "builtin" else Path(m.draft).name)
+        t.add_row(k, ("" if Path(m.path).is_file() else "[red]missing[/] ") + escape(Path(m.path).name),
+                  str(m.ctx or "-"), escape(draft), escape(m.default_serve or "-")
+                  + (f"\n[dim]spec: {escape(m.default_serve_spec)}[/]" if m.default_serve_spec else ""))
+    console.print(t)
+
+
+@models.command("show")
+@json_option
+@click.argument("name")
+@pass_ctx
+def models_show(ctx: Ctx, name) -> None:
+    try:
+        key, m = ctx.cfg.model(name)
+    except KeyError as e:
+        raise click.ClickException(str(e.args[0])) from e
+    d = m.model_dump() | {"name": key, "label": m.label, "exists": Path(m.path).is_file()}
+    if ctx.json:
+        click.echo(json.dumps(d, indent=2))
+        return
+    for k, val in d.items():
+        if val not in (None, [], {}):
+            _plain(f"{k:19} {val}")
+
+
+# ---------------------------------------------------------------- bench / benchy / serve / eval (dry-run, M3)
+
+def _show_commands(ctx: Ctx, cmds: list, dry_run: bool, runs_in: str) -> None:
+    """Print built commands (with flag-check errors and warnings); without --dry-run say when running lands."""
+    from mse_llm.runners import display_argv
+
+    if ctx.json:
+        click.echo(json.dumps([c.as_dict() for c in cmds], indent=2))
+    else:
+        for c in cmds:
+            ctxs = f"  [dim](ctx {c.ctx})[/]" if c.ctx else ""
+            console.print(f"[bold]▶ {escape(c.label)}[/]{ctxs}")
+            parts = [("server", c.server), ("client", c)] if c.server else [("", c)]
+            for role, x in parts:
+                env = " ".join(f"{k}={v}" for k, v in x.env.items())
+                _plain(f"  {role + '  ' if role else ''}{env + ' ' if env else ''}{display_argv(x.argv)}")
+                for w in x.warnings:
+                    console.print(f"    [yellow]![/] {escape(w)}")
+                for e in x.errors:
+                    console.print(f"    [red]✗[/] {escape(e)}")
+        snaps = {c.snapshot or (c.server.snapshot if c.server else None) for c in cmds} - {None}
+        if snaps:
+            console.print(f"[dim]flags checked against help snapshot {', '.join(sorted(snaps))}[/]")
+    bad = [c for c in cmds if not c.ok]
+    if bad:
+        if not ctx.json:
+            console.print(f"[red]{len(bad)} of {len(cmds)} command(s) failed the flag check[/]")
+        sys.exit(1)
+    if not dry_run:
+        raise click.ClickException(f"running this arrives in {runs_in}; for now use --dry-run to see the commands")
+
+
+def _variants_for(ctx: Ctx, model: str, patterns, from_file, spec: bool = False) -> list:
+    from mse_llm import variants as vv
+
+    try:
+        _, m = ctx.cfg.model(model)
+        names = _variant_names(patterns, from_file)
+        if not names:
+            default = m.default_serve_spec if spec else m.default_serve
+            if not default:
+                raise click.ClickException(f"{model}: no -v VARIANT and no "
+                                           f"{'default_serve_spec' if spec else 'default_serve'} in [models.{model}]")
+            names = [default]
+        return vv.resolve(names)
+    except vv.VariantError as e:
+        raise click.ClickException(str(e)) from e
+    except KeyError as e:
+        raise click.ClickException(str(e.args[0])) from e
+
+
+def _variant_options(f):
+    for opt in reversed([
+        click.option("-v", "--variant", "patterns", multiple=True,
+                     help="Variant name or brace pattern (repeatable). Legacy extra_* names work."),
+        click.option("--from", "from_file", type=click.Path(allow_dash=True), default=None,
+                     help="Variant list from a file or - (stdin), e.g. a pasted bash extras_list."),
+        click.option("--engine", default=None, help="Engine (default: cuda_flash)."),
+        click.option("--dry-run", is_flag=True, help="Print the commands (flag-checked) and stop."),
+        json_option,
+    ]):
+        f = opt(f)
+    return f
+
+
+@main.command("bench")
+@click.argument("model")
+@_variant_options
+@click.option("--ctx", "ctxs", type=int, multiple=True,
+              help="Prompt size -p (repeatable: one run per size, bash _wrapper_PROMPTS). Default: [models].ctx.")
+@click.option("--tg", type=int, multiple=True, help="Generated tokens -n (default: [defaults].bench_tg).")
+@click.option("-r", "--repetitions", type=int, default=None,
+              help="llama-bench -r (default: [defaults].bench_repetitions).")
+@pass_ctx
+def bench_cmd(ctx: Ctx, model, patterns, from_file, engine, dry_run, ctxs, tg, repetitions) -> None:
+    """llama-bench per variant (bash run_bench_params / run_BENCH_*)."""
+    from mse_llm.runners import bench_command
+
+    vs = _variants_for(ctx, model, patterns, from_file)
+    cmds = [bench_command(ctx.cfg, model, v, c, engine, tg=list(tg) or None, repetitions=repetitions)
+            for c in (ctxs or [None]) for v in vs]
+    _show_commands(ctx, cmds, dry_run, "M7 (bench + results store)")
+
+
+@main.command("benchy")
+@click.argument("model")
+@_variant_options
+@click.option("--ctx", "ctx_", type=int, default=None, help="Server context -c (default: [models].ctx).")
+@click.option("--pp", type=int, multiple=True,
+              help="Prompt sizes (default: the context when pp_sync_ctx, else [defaults.benchy].pp).")
+@click.option("--tg", type=int, multiple=True, help="Generated tokens (default: [defaults].bench_tg).")
+@click.option("--depth", type=int, multiple=True, help="Context depths (default: [defaults.benchy].depth).")
+@click.option("--runs", type=int, default=None)
+@pass_ctx
+def benchy_cmd(ctx: Ctx, model, patterns, from_file, engine, dry_run, ctx_, pp, tg, depth, runs) -> None:
+    """llama-benchy against a background llama-server, per variant
+    (bash run_benchy_params_with_server / run_BENCHY_WITH_SERVER_*)."""
+    from mse_llm.runners import benchy_command
+
+    vs = _variants_for(ctx, model, patterns, from_file)
+    cmds = [benchy_command(ctx.cfg, model, v, ctx_, engine, pp=list(pp) or None, tg=list(tg) or None,
+                           depth=list(depth) or None, runs=runs) for v in vs]
+    _show_commands(ctx, cmds, dry_run, "M5 (ServerHandle) + M7 (benchy)")
+
+
+@main.command("serve")
+@click.argument("model", required=False)
+@click.option("-v", "--variant", "patterns", multiple=True, help="Variant (default: [models].default_serve).")
+@click.option("--spec", is_flag=True, help="Use default_serve_spec (bash SD_ENABLED=1).")
+@click.option("--ctx", "ctx_", type=int, default=None, help="Context -c (default: [models].ctx).")
+@click.option("--port", type=int, default=None)
+@click.option("--all", "all_", is_flag=True, help="Every model with a default_serve (bash run_PRESETS_dump).")
+@click.option("--engine", default=None)
+@click.option("--dry-run", is_flag=True,
+              help="Print the command (flag-checked) and stop (bash MSE_SERVER_PRESETS_DUMP).")
+@json_option
+@pass_ctx
+def serve_cmd(ctx: Ctx, model, patterns, spec, ctx_, port, all_, engine, dry_run) -> None:
+    """llama-server for one model with --fit on (bash run_serve_params / run_SERVER_*)."""
+    from mse_llm.runners import server_command
+
+    if all_:
+        keys = [k for k, m in ctx.cfg.models.items() if (m.default_serve_spec if spec else m.default_serve)]
+        cmds = [server_command(ctx.cfg, k, _variants_for(ctx, k, (), None, spec)[0], ctx_, engine, port=port)
+                for k in keys]
+    elif model:
+        vs = _variants_for(ctx, model, patterns, None, spec)
+        if len(vs) > 1:
+            raise click.ClickException("serve runs one variant; got " + ", ".join(v.name for v in vs))
+        cmds = [server_command(ctx.cfg, model, vs[0], ctx_, engine, port=port)]
+    else:
+        raise click.ClickException("give a MODEL or --all")
+    _show_commands(ctx, cmds, dry_run, "M5 (serve)")
+
+
+@main.command("eval")
+@click.argument("model")
+@click.argument("task")
+@click.option("-v", "--variant", "patterns", multiple=True, help="Variant (default: [models].default_serve).")
+@click.option("--ctx", "ctx_", type=int, default=None)
+@click.option("--engine", default=None)
+@click.option("--dry-run", is_flag=True)
+@json_option
+@pass_ctx
+def eval_cmd(ctx: Ctx, model, task, patterns, ctx_, engine, dry_run) -> None:
+    """inspect-ai TASK (mmlu_pro, gpqa_diamond, math_aime_24, ...) against a background server (bash run_INSPECT_*)."""
+    from mse_llm.runners import inspect_command
+
+    vs = _variants_for(ctx, model, patterns, None)
+    cmds = [inspect_command(ctx.cfg, model, task, v, ctx_, engine) for v in vs]
+    _show_commands(ctx, cmds, dry_run, "M12 (eval)")
+
+
+@main.group()
+def presets() -> None:
+    """Multi-model router from an INI file (§4.3). M3: `serve --dry-run`; the rest arrives in M5."""
+
+
+@presets.command("serve")
+@click.option("--file", "file_", type=click.Path(dir_okay=False), default=None,
+              help="Presets INI (default: [presets].file = llama_cpp_presets.ini).")
+@click.option("--port", type=int, default=None)
+@click.option("--models-max", type=int, default=None)
+@click.option("--memory-margin", "memory_margin", type=int, default=None, help="MiB (--models-memory-margin).")
+@click.option("--engine", default=None)
+@click.option("--dry-run", is_flag=True)
+@json_option
+@pass_ctx
+def presets_serve(ctx: Ctx, file_, port, models_max, memory_margin, engine, dry_run) -> None:
+    """llama-server --models-preset INI (bash run_PRESETS_serve)."""
+    from mse_llm.runners import presets_serve_command
+
+    cmd = presets_serve_command(ctx.cfg, file_, engine, port=port, models_max=models_max,
+                                memory_margin_mib=memory_margin)
+    _show_commands(ctx, [cmd], dry_run, "M5 (presets serve)")
 
 
 if __name__ == "__main__":

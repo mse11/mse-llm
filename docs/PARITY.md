@@ -9,22 +9,22 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | # | Script feature (bash) | Replacement | Check | Status |
 |---|---|---|---|---|
 | F1 | `run_HELP_server/bench__*` | `mse-llm help server\|bench` (+ `benchy`, `eval`), `doctor flags` | output identical to `--help` | ✓ M2: real snapshots `a49db739f` + `ffc87c3a7` stored; `doctor flags` diff + audit checked against them |
-| F2 | `MODELS`, `DRAFTER_MODELS`, `MODELS_BENCH_EXTRA`, `MODELS_SERVE_EXTRA` | `[models.*]` in config | every model + extra present | ◐ M0: schema + the 5 INI models; full set from the script in M3 |
-| F3 | `EXTRAS` matrix + `EXTRAS_get_flags_normalized/_replaced` | `variants.py` codec | golden test: every generated key decodes to the same flags | ☐ M3 |
-| F4 | `run_bench_params*`, `_wrapper_EXTRAS`, `_wrapper_PROMPTS` | `mse-llm bench` | same argv in `--dry-run` (§0.1 bugs fixed) | ☐ M3/M7 |
-| F5 | `run_benchy_params_with_server*` | `mse-llm benchy` | same argv, `--pp` list passed once | ☐ M7 |
+| F2 | `MODELS`, `DRAFTER_MODELS`, `MODELS_BENCH_EXTRA`, `MODELS_SERVE_EXTRA` | `[models.*]` in config | every model + extra present | ✓ M3: all 7 models under their bash keys (drafter, serve_extra, ctx, default_serve/_spec); the golden test compares paths + extras |
+| F3 | `EXTRAS` matrix + `EXTRAS_get_flags_normalized/_replaced` | `variants.py` codec | golden test: every generated key decodes to the same flags | ✓ M3: all 1249 `EXTRAS` keys + placeholder replacement for every model (`tests/test_cmd_build.py`); turbo keys raise "dropped" |
+| F4 | `run_bench_params*`, `_wrapper_EXTRAS`, `_wrapper_PROMPTS` | `mse-llm bench` | same argv in `--dry-run` (§0.1 bugs fixed) | ◐ M3: `bench --dry-run` argv = bash (differences below); `-v` list / repeated `--ctx` = the two wrappers; running in M7 |
+| F5 | `run_benchy_params_with_server*` | `mse-llm benchy` | same argv, `--pp` list passed once | ◐ M3: `benchy --dry-run` server + client argv = bash, lists after one flag; running in M5/M7 |
 | F6 | `run_serve_params_on_background`, `server_wait_for_ready`, `server_stop_windows` | `ServerHandle` | 50× start/stop, no orphans | ☐ M5 |
-| F7 | `run_serve_params` + `_FILTER`, output modes | `mse-llm serve --output` | same filtered lines | ☐ M5 |
-| F8 | `run_presets_serve`, `run_PRESETS_serve`, `run_PRESETS_dump`, `run_presets_dump` | `mse-llm presets …` | existing INI serves all 5 models | ☐ M5 |
+| F7 | `run_serve_params` + `_FILTER`, output modes | `mse-llm serve --output` | same filtered lines | ◐ M3: `serve --dry-run` argv = bash (+ `--fit on`); running + output filter in M5 |
+| F8 | `run_presets_serve`, `run_PRESETS_serve`, `run_PRESETS_dump`, `run_presets_dump` | `mse-llm presets …` | existing INI serves all 5 models | ◐ M3: `presets serve --dry-run` argv = bash; `run_PRESETS_dump` = `serve --all --dry-run`; the rest in M5 |
 | F9 | `EXEC_cmd_with_gpu_and_ram_monitoring` | `monitor/` | peaks within tolerance | ☐ M6 (M1: NVML/PDH availability checked by `doctor`) |
 | F10 | `run_dump_params_wrapper_PLOTER` | `mse-llm report chart` (+ `--legacy-log`) | old logs give the same chart | ☐ M8 |
 | F11 | `run_dump_params_wrapper_AI_PROMPT/_COMMON/_EXTRAS/_PROMPTS` | `mse-llm report prompt` | same sections + data | ☐ M8 |
-| F12 | `run_inspect_params*` | `mse-llm eval` | real eval runs | ☐ M12 |
+| F12 | `run_inspect_params*` | `mse-llm eval` | real eval runs | ◐ M3: `eval MODEL TASK --dry-run` = the bash builder (URL from the engine); running in M12 |
 | F13 | `EXEC_user_notification_WIN_T2S` | `notify.py` | voice message at end of run | ☐ M6 |
 | F14 | `EXEC_cmd_with_output_mode` (all/filter/none) | `--output` | — | ◐ M0: `[defaults].output`; behaviour in M5 |
 | F15 | `MSE_*` knobs | config fields / `MSE_LLM_*` env / `--dry-run` | each knob mapped or dropped | ◐ M0: see the knob table below |
 | — | `run_BENCH_*`, `run_BENCHY_WITH_SERVER_*`, `run_SERVER_*`, `run_INSPECT_*` group functions (+ commented entries, "SWEETSPOT", "PC freeze" notes) | `[sweeps.*]` + `annotations` | one entry per function, notes kept | ☐ M7 |
-| — | Model notes in comments (HF URLs, sizes, capabilities) | `[models.*].url`, `notes` | nothing lost | ☐ M3 |
+| — | Model notes in comments (HF URLs, sizes, capabilities) | `[models.*].url`, `notes` | nothing lost | ✓ M3: URLs, sizes, capabilities and the per-model bench notes (SWEETSPOT / PC freeze) in `config.example.toml`; per-entry annotations go to `[sweeps.*]` in M7 |
 | — | turbo2/3/4 cache variants (`*_Kt*`, `*_Vt*`) | — | — | ✗ dropped: not supported by upstream llama.cpp (approved 2026-11-18) |
 
 ## F15: `MSE_*` knobs
@@ -39,9 +39,34 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | `MSE_MONITOR_ENABLED` | `[defaults].monitor` | ✓ M0 (used from M6) |
 | `MSE_LLAMA_BIN_DIR` | `[engines.*].bin_dir`, from the build profile | ✓ M0; M2: `builds\llama.cpp\build\bin\Release` built by `mse-llm build run`, same folder in the script |
 | `MSE_PS_DEBUG` | `-v/--verbose` | ☐ (no PowerShell left to debug after M6) |
-| `MSE_SERVER_PRESETS_DUMP` | `--dry-run` / `presets dump` | ☐ M5 |
-| `MSE_PRESETS_SERVE_FILE` | `presets serve --file` | ☐ M5 |
+| `MSE_SERVER_PRESETS_DUMP` | `--dry-run`, `serve --all --dry-run` (`presets dump` of the INI in M5) | ✓ M3 |
+| `MSE_PRESETS_SERVE_FILE` | `[presets].file`, `presets serve --file` | ✓ M3 (argv); serving in M5 |
 | `MSE_TEST_INSPECT_PATH` | `eval` config | ☐ M12 |
+
+## M3: argv differences (bash → mse-llm)
+
+`tests/test_cmd_build.py` compares every command against `tests/fixtures/bash_golden/golden.jsonl`,
+dumped from the real script by `tests/fixtures/bash_golden/dump_golden.sh` (nothing is run).
+These are the only differences. Everything else is identical, in the same order:
+
+| Where | bash | mse-llm | Why |
+|---|---|---|---|
+| all | `-fa 1` | `-fa on` | §0.2: `-fa` takes on/off/auto |
+| llama-server | `-ngl 999` | `-ngl all` (`[defaults].ngl`) | §0.2; llama-bench keeps `999` (it takes numbers only) |
+| llama-server | (none) | `--fit on` for `serve`; `--fit off` (`[defaults].fit`) for the benchy/eval server; before `--host` | §0.3 / §11 Q3 |
+| llama-bench | (none) | `-r 1 -o jsonl` at the end | bash used the implicit `-r 5`; JSONL output for the results store (M7) |
+| llama-bench | `--spec-* --model-draft MODEL` passed for `sd*` | error before running: "llama-bench can't run sd …; use benchy" | §0.1: llama-bench has no `--spec-*` flags |
+| sd*mtp without a drafter | literal `--model-draft MODEL` | flag left out + warning | bash bug (placeholder never replaced) |
+| benchy | `--pp a --pp b` | `--pp a b` | §0.1: nargs='+', bash kept only the last value. Same argv for one value |
+| benchy | (none) | warning when pp + tg + depth > ctx | PP sync makes `--pp` = ctx, so the longest request is ctx + 128 tokens |
+| turbo2/3/4 | `-ctk/-ctv turbo*` | `DroppedVariantError` | dropped (approved 2026-11-18) |
+| inspect | port hard-coded 8033 | URL from the engine | §0.1 |
+| first `run_SERVER_gemma_4_26B_A4b_UD_Q4_K_M_*` | served GLM, shadowed | `serve GLM_47_Flash_REAP_23B_A3B_Q4_K_M` (its `default_serve`) | §0.1: names come from config now |
+| `${BENCH_extra}` typo | user bench extra never appended | `[models.*].bench_extra` appended | §0.1 |
+
+Every built llama-server / llama-bench argv is also checked against the engine's help snapshot
+(the one for the commit in its `build-manifest.json`): unknown flags, missing values and enum values
+(`-ctk`, `-fa`, `-lm`, `--spec-type`, ...) fail the command before anything starts.
 
 ## Milestone log
 
@@ -64,3 +89,12 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
     verify step accepts either macro.
   * Build times on this laptop: vcpkg curl + openssl once ~5.5 min, configure ~45 s, full compile ~8-9.5 min.
   * Not yet: `presets validate` (M5); the INI is checked by the `doctor flags` audit for now.
+* **M3 (2026-11-19):** `variants.py` (codec with the legacy `extra_` prefix; new tokens `cmoe mc cs lm* nohost fitt
+  Kf8 sd<N><type>`; turbo → "dropped" error; brace patterns; pasted bash arrays; matrix + `exclude`), command builders
+  in `runners/` (llama-server, llama-bench, llama-benchy, inspect, router), flag validation against the help snapshot
+  (`flagcheck.py`), CLI `variants decode|encode|expand`, `models list|show`, `bench|benchy|serve|eval|presets serve
+  --dry-run`. All 7 bash models ported to `config.example.toml`. Golden tests: the 1249 `EXTRAS` keys, placeholder
+  replacement for every model, every `run_SERVER_*`, the active and some commented `run_BENCH_*` / `run_BENCHY_*`
+  entries, `run_INSPECT_*`, `run_PRESETS_serve`, `run_HELP_*`. The help parser now also reads `--spec-type` (value list
+  as metavar), `-lm` / `--reasoning-format` (bullet lists) and the `-fitt` / `-ts` list metavars; the `doctor flags`
+  audit is unchanged (15 findings).

@@ -709,7 +709,8 @@ mse-llm/
   `anyio` (structured concurrency / task groups), `jinja2`. All config is TOML, read with stdlib `tomllib`.
 * Monitoring / hw detection: `nvidia-ml-py` (pynvml), `pywin32` (PDH) on Windows only (environment
   marker), `gguf` (GGUF metadata for fit estimates). CPU topology and power use stdlib `ctypes`/`winreg`.
-* Report: `matplotlib`, `numpy`, optional `pandas`. Optional extra `[report]` keeps the core light.
+* Report: `matplotlib`, `numpy`, `jinja2`. As built (M8): normal dependencies instead of an optional `[report]`
+  extra, so `uv run mse-llm report chart` needs no extra install step; no pandas.
 * Tools run through `uvx` as today: `llama-benchy`, `inspect-ai` (+ `inspect-evals`, `openai`).
   Pin their versions in config so results stay reproducible.
 * Dev: `pytest`, `pytest-asyncio` (or anyio plugin), `ruff`, `mypy`/`pyright`.
@@ -1780,7 +1781,7 @@ mean_accept_len, accepted_per_pos[]} (§4.5), status (ok|failed|aborted|skipped)
 * Every job is fit-checked first: a no-fit variant becomes a `skipped` result with the reason and the
   `-ncmoe` suggestion, without starting the tool (`--force` starts it anyway).
 * `results list` / `results show` (with the reproduce command, §9 item 1) are in M7; `results compare` and
-  `results export --csv` come with the reports (M8).
+  `results export --csv` in M8. Reports go to `results/reports/<sweep or model>/`.
 * Charts: port the 5-axis grouped bar chart as is (parity), then add:
   * Pareto chart: TG t/s vs peak VRAM (or vs shared-mem spill), one point per variant.
   * Heatmap: `n-cpu-moe` × `ub` → TG (or PP).
@@ -1894,7 +1895,7 @@ come first:
 | **M5** | `proc.py` + `ServerHandle` (async spawn, readiness, tree kill, port-free check); `serve` (+ `--preset`, `--fit on` with the `fit` pre-check warning, §0.3); `presets *` (§4.3) | Server starts/stops cleanly 50× in a loop on Windows with no orphan processes; `serve` warns before a bad fit and shows what `--fit` would change; `presets serve` + `presets load` switch between two models through one endpoint |
 | **M6** | `monitor/` (NVML, PDH, psutil) + memory guard + **freeze prevention** (§9 item 7: live spill / RAM / commit stop with the guard rules of §5, optional Job Object cap) + notify | Peaks match the bash monitor within tolerance; a forced over-commit run is stopped before the laptop stalls |
 | **M7** | `bench` (llama-bench jsonl) + `benchy` (json) + results store in `results/` + `sweep run --resume` | Old sweeps from the script run from TOML; results JSON written. As built: all 9 bash group functions are `[sweeps.*]` (161 entries, comments as status / note / tag), `sweep list/show/run`, `results list/show`, fit pre-check per job, guard rule D (hang) |
-| **M8** | `report chart` (parity 5-axis + legacy log import), `report table`, `report prompt` | Chart from new results matches the old chart for the same data; old `.txt` logs still chart |
+| **M8** | `report chart` (parity 5-axis + legacy log import), `report table`, `report prompt` | Chart from new results matches the old chart for the same data; old `.txt` logs still chart. As built: pixel-identical PNG to the bash plotter on the same log; old `.txt` logs and the `_RESULTS/*.html` pages chart; plus `results compare` / `results export --csv` |
 | **M9** | §4.6 `predict` (GGUF expert sizes, `llama-fit-params` grid, roofline TG/PP, calibration from M7 runs) + §9 item 6 `sweep search` (safe side first, stops at the first spill, winner one step back) | After calibration, predicted TG/PP are within ~15 % of measured for 2 models; `sweep search` finds a sweet spot without a single run that spills |
 | **M10** | §4.5: `quality kld-ref/kld/floor` (llama-perplexity, size preview, wikitext-2 + code corpus, reference fallbacks); `--metrics` on bench servers + `/metrics` delta scraping, spec log parsing, `RunResult.quality` / `.spec` | KLD table for 3 K/V variants of one model, with noise floor; a `sd{2,3,4}mtp` benchy sweep shows acceptance rate + per-position acceptance next to TG |
 | **M11** | MoE-cache axes (§4.4): `cmoe/mc/cs/lm*/Kf8` tokens, staged sweeps, server-log cache stats, `tune moe-cache` wrapper | Stage 0–2 sweep for Qwen36 MTP completes; chart shows TG/PP/duration/VRAM/hit rate per variant |

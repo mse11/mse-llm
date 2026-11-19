@@ -1,0 +1,1253 @@
+RESULTS_run_BENCH_gemma_4_26B_A4b_UD_Q4_K_M_CTX
+llama-bench: EXPERIMENT (ctx_65536): gemma_4_26B_A4b_UD_Q4_K_M_cuda_flash_XXX_default_moeX__ctx_65536_batch_ubatch
+llama-bench: EXPERIMENT (ctx_65536): gemma_4_26B_A4b_UD_Q4_K_M_cuda_flash_XXX_default_moeX__ctx_65536_
+
+
+
+
+
+
+
+
+
+$ run_BENCH_gemma_4_26B_A4b_UD_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x
+
+Starting tests:
+TEST 1: extra_fa_Kq8_Vq8_default_moe31
+TEST 2: extra_fa_Kq8_Vq4_default_moe31
+TEST 3: extra_fa_Kq8_Vq8_b2048_ub1024_moe31
+TEST 4: extra_fa_Kq8_Vq4_b2048_ub1024_moe31
+TEST 5: extra_fa_Kq8_Vq8_b2048_ub2048_moe31
+TEST 6: extra_fa_Kq8_Vq4_b2048_ub2048_moe31
+TEST 7: extra_fa_Kq8_Vq8_b8192_ub8192_moe31
+TEST 8: extra_fa_Kq8_Vq4_b8192_ub8192_moe31
+TEST 9: extra_fa_Kq8_Vq8_b6144_ub6144_moe31
+TEST 10: extra_fa_Kq8_Vq4_b6144_ub6144_moe31
+TEST 11: extra_fa_Kq8_Vq8_b4096_ub4096_moe26
+TEST 12: extra_fa_Kq8_Vq8_b4096_ub4096_moe31
+TEST 13: extra_fa_Kq8_Vq4_b4096_ub4096_moe31
+TEST 14: extra_fa_Kq8_Vq8_b4096_ub2048_moe31
+TEST 15: extra_fa_Kq8_Vq4_b4096_ub2048_moe31
+TEST 16: extra_fa_Kq8_Vq8_b4096_ub1024_moe31
+TEST 17: extra_fa_Kq8_Vq4_b4096_ub1024_moe31
+
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 71 MiB
+Baseline RAM Used: 35580 MiB
+Baseline GPU Temperature: 50�C
+[1] 1133
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq8_default_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | q8_0 | q8_0 | 1 | 0 | pp65536 | 873.96 � 11.06 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | q8_0 | q8_0 | 1 | 0 | tg128 | 24.35 � 1.66 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 8m 17s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 120 lines
+✓ RAM_LOG exists: 120 lines
+✓ GPU_TEMP_LOG exists: 120 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 4858 MiB
+Peak Shared Memory: 14732 MiB (baseline: 71 MiB, delta: 14661 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 50726 MiB / 81089 MiB (62%)
+Delta from Baseline: 15146 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 75�C
+Average: 70�C
+STATUS: [✓] GPU temperature normal.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 4 MiB
+Baseline RAM Used: 35533 MiB
+Baseline GPU Temperature: 55�C
+[1] 2625
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq4_default_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | q8_0 | q4_0 | 1 | 0 | pp65536 | 877.25 � 12.05 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | q8_0 | q4_0 | 1 | 0 | tg128 | 26.48 � 1.28 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 8m 5s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 128 lines
+✓ RAM_LOG exists: 128 lines
+✓ GPU_TEMP_LOG exists: 128 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 4660 MiB
+Peak Shared Memory: 14668 MiB (baseline: 4 MiB, delta: 14664 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 50602 MiB / 81089 MiB (62%)
+Delta from Baseline: 15069 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 76�C
+Average: 71�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 5 MiB
+Baseline RAM Used: 35721 MiB
+Baseline GPU Temperature: 55�C
+[1] 4217
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq8_b2048_ub1024_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_b2048_ub1024_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 -b 2048 -ub 1024 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 -b 2048 -ub 1024 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 -b 2048 -ub 1024 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 -b 2048 -ub 1024 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 1024 | q8_0 | q8_0 | 1 | 0 | pp65536 | 1341.84 � 11.67 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 1024 | q8_0 | q8_0 | 1 | 0 | tg128 | 26.38 � 1.63 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 5m 30s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 96 lines
+✓ RAM_LOG exists: 96 lines
+✓ GPU_TEMP_LOG exists: 96 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 5412 MiB
+Peak Shared Memory: 14809 MiB (baseline: 5 MiB, delta: 14804 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 50760 MiB / 81089 MiB (62%)
+Delta from Baseline: 15039 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 79�C
+Average: 74�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 2 MiB
+Baseline RAM Used: 35850 MiB
+Baseline GPU Temperature: 54�C
+[1] 5429
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq4_b2048_ub1024_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_b2048_ub1024_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 -b 2048 -ub 1024 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 -b 2048 -ub 1024 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 -b 2048 -ub 1024 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 -b 2048 -ub 1024 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 1024 | q8_0 | q4_0 | 1 | 0 | pp65536 | 1349.86 � 13.35 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 1024 | q8_0 | q4_0 | 1 | 0 | tg128 | 26.58 � 1.78 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 5m 28s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 96 lines
+✓ RAM_LOG exists: 96 lines
+✓ GPU_TEMP_LOG exists: 96 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 5202 MiB
+Peak Shared Memory: 14806 MiB (baseline: 2 MiB, delta: 14804 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 50879 MiB / 81089 MiB (62%)
+Delta from Baseline: 15029 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 79�C
+Average: 73�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 2 MiB
+Baseline RAM Used: 35978 MiB
+Baseline GPU Temperature: 54�C
+[1] 6633
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq8_b2048_ub2048_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_b2048_ub2048_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 -b 2048 -ub 2048 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 -b 2048 -ub 2048 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 -b 2048 -ub 2048 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 -b 2048 -ub 2048 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 2048 | q8_0 | q8_0 | 1 | 0 | pp65536 | 1792.13 � 9.59 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 2048 | q8_0 | q8_0 | 1 | 0 | tg128 | 26.16 � 1.56 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 4m 17s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 76 lines
+✓ RAM_LOG exists: 76 lines
+✓ GPU_TEMP_LOG exists: 76 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 6584 MiB
+Peak Shared Memory: 15100 MiB (baseline: 2 MiB, delta: 15098 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 51019 MiB / 81089 MiB (62%)
+Delta from Baseline: 15041 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 81�C
+Average: 75�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 2 MiB
+Baseline RAM Used: 36139 MiB
+Baseline GPU Temperature: 55�C
+[1] 7601
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq4_b2048_ub2048_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_b2048_ub2048_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 -b 2048 -ub 2048 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 -b 2048 -ub 2048 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 -b 2048 -ub 2048 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 -b 2048 -ub 2048 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 2048 | q8_0 | q4_0 | 1 | 0 | pp65536 | 1797.28 � 9.61 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 2048 | q8_0 | q4_0 | 1 | 0 | tg128 | 26.42 � 1.75 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 4m 21s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 78 lines
+✓ RAM_LOG exists: 78 lines
+✓ GPU_TEMP_LOG exists: 78 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 6333 MiB
+Peak Shared Memory: 15100 MiB (baseline: 2 MiB, delta: 15098 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 51202 MiB / 81089 MiB (63%)
+Delta from Baseline: 15063 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 82�C
+Average: 75�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+-------------------------------------------------------------- TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<< -------------------------------------------------------------- Baseline Shared Memory: 2 MiB Baseline RAM Used: 36317 MiB Baseline GPU Temperature: 55�C [1] 8586 output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq8_b8192_ub8192_moe31 EXTRA: lookup_key = extra_fa_Kq8_Vq8_b8192_ub8192_moeN EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 -b 8192 -ub 8192 --n-cpu-moe N EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 -b 8192 -ub 8192 --n-cpu-moe 31 WARNING unhandled (used 'common') with user's bench_extra='' -------------------------------------------------------------- TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 -b 8192 -ub 8192 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 -b 8192 -ub 8192 --n-cpu-moe 31 --mmap 0 -------------------------------------------------------------- ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB): Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB | model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s | | ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: | | gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 8192 | 8192 | q8_0 | q8_0 | 1 | 0 | pp65536 | 123.78 � 0.08 | | gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 8192 | 8192 | q8_0 | q8_0 | 1 | 0 | tg128 | 26.19 � 1.17 | build: 30af6e2b9 (9389) --------------------------- RESULTS -------------------------- Duration: 53m 50s [DEBUG] Log files created: ✓ VRAM_LOG exists: 979 lines ✓ RAM_LOG exists: 979 lines ✓ GPU_TEMP_LOG exists: 979 lines GPU Memory: Peak Dedicated VRAM: 11933 MiB Peak Shared Memory: 18546 MiB (baseline: 2 MiB, delta: 18544 MiB) STATUS: [!] Performance hit detected. Offloaded to System RAM. System RAM: Peak RAM Used: 51354 MiB / 81089 MiB (63%) Delta from Baseline: 15037 MiB STATUS: [⚠] Moderate RAM usage (60-80%). GPU Temperature: Peak: 60�C Average: 57�C STATUS: [✓] GPU temperature normal. -------------------------------------------------------------- 1 -------------------------------------------------------------- TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<< -------------------------------------------------------------- Baseline Shared Memory: 1 MiB Baseline RAM Used: 36800 MiB Baseline GPU Temperature: 49�C [1] 20390 output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq4_b8192_ub8192_moe31 EXTRA: lookup_key = extra_fa_Kq8_Vq4_b8192_ub8192_moeN EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 -b 8192 -ub 8192 --n-cpu-moe N EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 -b 8192 -ub 8192 --n-cpu-moe 31 WARNING unhandled (used 'common') with user's bench_extra='' -------------------------------------------------------------- TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 -b 8192 -ub 8192 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 -b 8192 -ub 8192 --n-cpu-moe 31 --mmap 0 -------------------------------------------------------------- ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB): Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB | model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s | | ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: | | gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 8192 | 8192 | q8_0 | q4_0 | 1 | 0 | pp65536 | 92.03 � 2.23 | | gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 8192 | 8192 | q8_0 | q4_0 | 1 | 0 | tg128 | 25.56 � 1.14 | build: 30af6e2b9 (9389) --------------------------- RESULTS -------------------------- Duration: 71m 59s [DEBUG] Log files created: ✓ VRAM_LOG exists: 1076 lines ✓ RAM_LOG exists: 1076 lines ✓ GPU_TEMP_LOG exists: 1076 lines GPU Memory: Peak Dedicated VRAM: 11927 MiB Peak Shared Memory: 18255 MiB (baseline: 1 MiB, delta: 18254 MiB) STATUS: [!] Performance hit detected. Offloaded to System RAM. System RAM: Peak RAM Used: 51845 MiB / 81089 MiB (63%) Delta from Baseline: 15045 MiB STATUS: [⚠] Moderate RAM usage (60-80%). GPU Temperature: Peak: 61�C Average: 57�C STATUS: [✓] GPU temperature normal. -------------------------------------------------------------- 1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 5 MiB
+Baseline RAM Used: 38838 MiB
+Baseline GPU Temperature: 51�C
+[1] 33351
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq8_b6144_ub6144_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_b6144_ub6144_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 -b 6144 -ub 6144 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 -b 6144 -ub 6144 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 -b 6144 -ub 6144 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 -b 6144 -ub 6144 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 6144 | 6144 | q8_0 | q8_0 | 1 | 0 | pp65536 | 2062.79 � 6.18 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 6144 | 6144 | q8_0 | q8_0 | 1 | 0 | tg128 | 24.72 � 0.93 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 4m 14s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 52 lines
+✓ RAM_LOG exists: 52 lines
+✓ GPU_TEMP_LOG exists: 52 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 11134 MiB
+Peak Shared Memory: 16356 MiB (baseline: 5 MiB, delta: 16351 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 55736 MiB / 81089 MiB (68%)
+Delta from Baseline: 16898 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 83�C
+Average: 75�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 5 MiB
+Baseline RAM Used: 38559 MiB
+Baseline GPU Temperature: 55�C
+[1] 34031
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq4_b6144_ub6144_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_b6144_ub6144_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 -b 6144 -ub 6144 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 -b 6144 -ub 6144 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 -b 6144 -ub 6144 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 -b 6144 -ub 6144 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 6144 | 6144 | q8_0 | q4_0 | 1 | 0 | pp65536 | 2070.50 � 6.64 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 6144 | 6144 | q8_0 | q4_0 | 1 | 0 | tg128 | 25.32 � 0.61 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 4m 8s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 56 lines
+✓ RAM_LOG exists: 56 lines
+✓ GPU_TEMP_LOG exists: 56 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 10800 MiB
+Peak Shared Memory: 16356 MiB (baseline: 5 MiB, delta: 16351 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 55448 MiB / 81089 MiB (68%)
+Delta from Baseline: 16889 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 84�C
+Average: 76�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 135 MiB
+Baseline RAM Used: 44602 MiB
+Baseline GPU Temperature: 53�C
+[1] 1897
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq8_b4096_ub4096_moe26
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_b4096_ub4096_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 4096 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 4096 --n-cpu-moe 26
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 4096 --n-cpu-moe 26 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 4096 --n-cpu-moe 26 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 26 | 4 | 4096 | 4096 | q8_0 | q8_0 | 1 | 0 | pp65536 | 2186.72 � 9.59 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 26 | 4 | 4096 | 4096 | q8_0 | q8_0 | 1 | 0 | tg128 | 29.28 � 0.62 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 9m 28s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 48 lines
+✓ RAM_LOG exists: 48 lines
+✓ GPU_TEMP_LOG exists: 48 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 10979 MiB
+Peak Shared Memory: 13917 MiB (baseline: 135 MiB, delta: 13782 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 58953 MiB / 81089 MiB (72%)
+Delta from Baseline: 14351 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 81�C
+Average: 59�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 4 MiB
+Baseline RAM Used: 38681 MiB
+Baseline GPU Temperature: 55�C
+[1] 34755
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq8_b4096_ub4096_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_b4096_ub4096_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 4096 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 4096 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 4096 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 4096 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 4096 | q8_0 | q8_0 | 1 | 0 | pp65536 | 2054.40 � 6.02 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 4096 | q8_0 | q8_0 | 1 | 0 | tg128 | 25.47 � 1.00 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 4m 2s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 57 lines
+✓ RAM_LOG exists: 57 lines
+✓ GPU_TEMP_LOG exists: 57 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 8858 MiB
+Peak Shared Memory: 15714 MiB (baseline: 4 MiB, delta: 15710 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 54910 MiB / 81089 MiB (67%)
+Delta from Baseline: 16229 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 84�C
+Average: 76�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 2 MiB
+Baseline RAM Used: 38813 MiB
+Baseline GPU Temperature: 55�C
+[1] 35495
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq4_b4096_ub4096_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_b4096_ub4096_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 4096 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 4096 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 4096 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 4096 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 4096 | q8_0 | q4_0 | 1 | 0 | pp65536 | 2059.02 � 7.48 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 4096 | q8_0 | q4_0 | 1 | 0 | tg128 | 25.64 � 1.14 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 4m 12s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 54 lines
+✓ RAM_LOG exists: 54 lines
+✓ GPU_TEMP_LOG exists: 54 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 8510 MiB
+Peak Shared Memory: 15712 MiB (baseline: 2 MiB, delta: 15710 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 55055 MiB / 81089 MiB (67%)
+Delta from Baseline: 16242 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 85�C
+Average: 77�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 1 MiB
+Baseline RAM Used: 38797 MiB
+Baseline GPU Temperature: 54�C
+[1] 36203
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq8_b4096_ub2048_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_b4096_ub2048_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 2048 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 2048 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 2048 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 2048 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 2048 | q8_0 | q8_0 | 1 | 0 | pp65536 | 1776.41 � 19.28 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 2048 | q8_0 | q8_0 | 1 | 0 | tg128 | 25.55 � 1.49 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 4m 23s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 56 lines
+✓ RAM_LOG exists: 56 lines
+✓ GPU_TEMP_LOG exists: 56 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 6505 MiB
+Peak Shared Memory: 15192 MiB (baseline: 1 MiB, delta: 15191 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 54570 MiB / 81089 MiB (67%)
+Delta from Baseline: 15773 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 83�C
+Average: 76�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 7 MiB
+Baseline RAM Used: 38988 MiB
+Baseline GPU Temperature: 56�C
+[1] 36924
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq4_b4096_ub2048_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_b4096_ub2048_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 2048 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 2048 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 2048 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 2048 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 2048 | q8_0 | q4_0 | 1 | 0 | pp65536 | 1774.09 � 10.23 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 2048 | q8_0 | q4_0 | 1 | 0 | tg128 | 25.75 � 1.51 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 4m 24s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 55 lines
+✓ RAM_LOG exists: 55 lines
+✓ GPU_TEMP_LOG exists: 55 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 6269 MiB
+Peak Shared Memory: 15106 MiB (baseline: 7 MiB, delta: 15099 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 54810 MiB / 81089 MiB (67%)
+Delta from Baseline: 15822 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 83�C
+Average: 76�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 7 MiB
+Baseline RAM Used: 39092 MiB
+Baseline GPU Temperature: 56�C
+[1] 37633
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq8_b4096_ub1024_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_b4096_ub1024_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 1024 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 1024 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 1024 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 -b 4096 -ub 1024 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 1024 | q8_0 | q8_0 | 1 | 0 | pp65536 | 1335.84 � 11.31 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 1024 | q8_0 | q8_0 | 1 | 0 | tg128 | 25.65 � 1.68 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 5m 36s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 77 lines
+✓ RAM_LOG exists: 77 lines
+✓ GPU_TEMP_LOG exists: 77 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 5333 MiB
+Peak Shared Memory: 14811 MiB (baseline: 7 MiB, delta: 14804 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 54553 MiB / 81089 MiB (67%)
+Delta from Baseline: 15461 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 80�C
+Average: 74�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+--------------------------------------------------------------
+TESTING: >>>>>>>>>>>>>>>>>>>>> Started <<<<<<<<<<<<<<<<<<<<<<<
+--------------------------------------------------------------
+Baseline Shared Memory: 7 MiB
+Baseline RAM Used: 39336 MiB
+Baseline GPU Temperature: 55�C
+[1] 38609
+output_mode[all] output_mode_filter_ref=[filter]
+EXTRA: lookup_orig = extra_fa_Kq8_Vq4_b4096_ub1024_moe31
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_b4096_ub1024_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 1024 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 1024 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 1024 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 -b 4096 -ub 1024 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | n_batch | n_ubatch | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | ------: | -------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 1024 | q8_0 | q4_0 | 1 | 0 | pp65536 | 1340.62 � 13.10 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | 4096 | 1024 | q8_0 | q4_0 | 1 | 0 | tg128 | 26.33 � 1.56 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 5m 34s
+[DEBUG] Log files created:
+✓ VRAM_LOG exists: 82 lines
+✓ RAM_LOG exists: 82 lines
+✓ GPU_TEMP_LOG exists: 82 lines
+
+
+GPU Memory:
+Peak Dedicated VRAM: 5123 MiB
+Peak Shared Memory: 14811 MiB (baseline: 7 MiB, delta: 14804 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+
+System RAM:
+Peak RAM Used: 54784 MiB / 81089 MiB (67%)
+Delta from Baseline: 15448 MiB
+STATUS: [⚠] Moderate RAM usage (60-80%).
+
+GPU Temperature:
+Peak: 80�C
+Average: 75�C
+STATUS: [⚠] GPU warm (75-85�C). Monitor for sustained loads.
+--------------------------------------------------------------
+1
+==================== LLM DATA ANALYST PROMPT: gemma_4_26B_A4b_UD_Q4_K_M [cuda_flash] ====================
+ROLE: Act as a Senior Performance Analyst and Python Data Scientist.
+INSTRUCTION: Provide a concise analysis and Immediately use the Python tool to parse the benchmark results from the logs above. Generate a Clustered Bar Chart.
+MODEL: gemma_4_26B_A4b_UD_Q4_K_M
+BENCHMARK: cuda_flash
+CONTEXT: 65536
+----------------------------------------------------------------
+VISUALIZATION SPECIFICATIONS:
+- Primary Y-Axis: Total Duration (s)
+- Secondary Y-Axis: Prompt Processing (t/s)
+- Tertiary Y-Axis: Token Generation (t/s)
+- Quaternary Y-Axis: Peak VRAM (MiB)
+- Quinary Y-Axis: Shared VRAM (MiB)
+- Data Labels: Annotate bars with 'Duration', 'PP', 'TG', 'Peak VRAM', 'Shared VRAM'.
+- X-Axis Labels: Use the TEST CONFIGURATION IDs provided below. IMPORTANT use full names
+
+TEST CONFIGURATIONS:
+TEST ID 1: extra_fa_Kq8_Vq8_default_moe31
+TEST ID 2: extra_fa_Kq8_Vq4_default_moe31
+TEST ID 3: extra_fa_Kq8_Vq8_b2048_ub1024_moe31
+TEST ID 4: extra_fa_Kq8_Vq4_b2048_ub1024_moe31
+TEST ID 5: extra_fa_Kq8_Vq8_b2048_ub2048_moe31
+TEST ID 6: extra_fa_Kq8_Vq4_b2048_ub2048_moe31
+TEST ID 7: extra_fa_Kq8_Vq8_b8192_ub8192_moe31
+TEST ID 8: extra_fa_Kq8_Vq4_b8192_ub8192_moe31
+TEST ID 9: extra_fa_Kq8_Vq8_b6144_ub6144_moe31
+TEST ID 10: extra_fa_Kq8_Vq4_b6144_ub6144_moe31
+TEST ID 11: extra_fa_Kq8_Vq8_b4096_ub4096_moe31
+TEST ID 12: extra_fa_Kq8_Vq4_b4096_ub4096_moe31
+TEST ID 13: extra_fa_Kq8_Vq8_b4096_ub2048_moe31
+TEST ID 14: extra_fa_Kq8_Vq4_b4096_ub2048_moe31
+TEST ID 15: extra_fa_Kq8_Vq8_b4096_ub1024_moe31
+TEST ID 16: extra_fa_Kq8_Vq4_b4096_ub1024_moe31
+
+[PASTE RAW RESULTS BELOW THIS LINE]
+----------------------------------------------------------------
+OUTPUT FORMAT REQUIREMENT:
+1. Briefly summarize the performance delta, VRAM efficiency, and wall-clock time.
+2. Ensure the graph is high-contrast and includes a combined legend for all 5 metrics.
+3. Graph Title: gemma_4_26B_A4b_UD_Q4_K_M - cuda_flash @ 65536 ctx
+4. Plot data with Grouped Bar Chart (or Clustered Bar Chart) with Multiple Y-Axes. IMPORTANT include all TEST CONFIGURATIONS
+==================== END OF PROMPT ============================
+
+$ run_BENCH_gemma_4_26B_A4b_UD_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x
+
+Starting tests:
+TEST 1: extra_fa_Kq8_Vq8_default_moe31
+TEST 2: extra_fa_Kq8_Vq4_default_moe31
+
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 133 MiB
+[1] 1762
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | q8_0 | q8_0 | 1 | 0 | pp65536 | 808.79 � 58.10 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | q8_0 | q8_0 | 1 | 0 | tg128 | 17.41 � 0.34 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 8m 56s
+Peak Dedicated VRAM: 5385 MiB
+Peak Shared Memory: 14843 MiB (baseline: 133 MiB, delta: 14710 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 31
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 31 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 31 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 53 MiB
+[1] 3677
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+ƒ| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | q8_0 | q4_0 | 1 | 0 | pp65536 | 823.63 � 61.56 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 31 | 4 | q8_0 | q4_0 | 1 | 0 | tg128 | 22.82 � 1.38 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 8m 45s
+Peak Dedicated VRAM: 5195 MiB
+Peak Shared Memory: 14884 MiB (baseline: 53 MiB, delta: 14831 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+==================== LLM DATA ANALYST PROMPT: gemma_4_26B_A4b_UD_Q4_K_M [cuda_flash] ====================
+ROLE: Act as a Senior Performance Analyst and Python Data Scientist.
+INSTRUCTION: Provide a concise analysis and Immediately use the Python tool to parse the benchmark results from the logs above. Generate a Clustered Bar Chart.
+MODEL: gemma_4_26B_A4b_UD_Q4_K_M
+BENCHMARK: cuda_flash
+CONTEXT: 65536
+----------------------------------------------------------------
+VISUALIZATION SPECIFICATIONS:
+- Primary Y-Axis: Total Duration (s)
+- Secondary Y-Axis: Prompt Processing (t/s)
+- Tertiary Y-Axis: Token Generation (t/s)
+- Quaternary Y-Axis: Peak VRAM (MiB)
+- Quinary Y-Axis: Shared VRAM (MiB)
+- Data Labels: Annotate bars with 'Duration', 'PP', 'TG', 'Peak VRAM', 'Shared VRAM'.
+- X-Axis Labels: Use the TEST CONFIGURATION IDs provided below. IMPORTANT use full names
+
+TEST CONFIGURATIONS:
+TEST ID 1: extra_fa_Kq8_Vq8_default_moe31
+TEST ID 2: extra_fa_Kq8_Vq4_default_moe31
+
+[PASTE RAW RESULTS BELOW THIS LINE]
+----------------------------------------------------------------
+OUTPUT FORMAT REQUIREMENT:
+1. Briefly summarize the performance delta, VRAM efficiency, and wall-clock time.
+2. Ensure the graph is high-contrast and includes a combined legend for all 5 metrics.
+3. Graph Title: gemma_4_26B_A4b_UD_Q4_K_M - cuda_flash @ 65536 ctx
+4. Plot data with Grouped Bar Chart (or Clustered Bar Chart) with Multiple Y-Axes. IMPORTANT include all TEST CONFIGURATIONS
+==================== END OF PROMPT ============================
+
+
+
+$run_BENCH_gemma_4_26B_A4b_UD_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x
+
+Starting tests:
+TEST 1: extra_fa_Kq8_Vq8_default_moe26
+TEST 2: extra_fa_Kq8_Vq4_default_moe26
+
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 26
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 26 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 26 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 131 MiB
+[1] 5531
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 26 | 4 | q8_0 | q8_0 | 1 | 0 | pp65536 | 778.23 � 9.91 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 26 | 4 | q8_0 | q8_0 | 1 | 0 | tg128 | 18.87 � 0.27 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 8m 58s
+Peak Dedicated VRAM: 7225 MiB
+Peak Shared Memory: 12902 MiB (baseline: 131 MiB, delta: 12771 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 26
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 26 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 26 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 51 MiB
+[1] 7283
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 26 | 4 | q8_0 | q4_0 | 1 | 0 | pp65536 | 898.34 � 48.33 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 26 | 4 | q8_0 | q4_0 | 1 | 0 | tg128 | 25.49 � 0.13 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 7m 53s
+Peak Dedicated VRAM: 7063 MiB
+Peak Shared Memory: 12948 MiB (baseline: 51 MiB, delta: 12897 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+==================== LLM DATA ANALYST PROMPT: gemma_4_26B_A4b_UD_Q4_K_M [cuda_flash] ====================
+ROLE: Act as a Senior Performance Analyst and Python Data Scientist.
+INSTRUCTION: Provide a concise analysis and Immediately use the Python tool to parse the benchmark results from the logs above. Generate a Clustered Bar Chart.
+MODEL: gemma_4_26B_A4b_UD_Q4_K_M
+BENCHMARK: cuda_flash
+CONTEXT: 65536
+----------------------------------------------------------------
+VISUALIZATION SPECIFICATIONS:
+- Primary Y-Axis: Total Duration (s)
+- Secondary Y-Axis: Prompt Processing (t/s)
+- Tertiary Y-Axis: Token Generation (t/s)
+- Quaternary Y-Axis: Peak VRAM (MiB)
+- Quinary Y-Axis: Shared VRAM (MiB)
+- Data Labels: Annotate bars with 'Duration', 'PP', 'TG', 'Peak VRAM', 'Shared VRAM'.
+- X-Axis Labels: Use the TEST CONFIGURATION IDs provided below. IMPORTANT use full names
+
+TEST CONFIGURATIONS:
+TEST ID 1: extra_fa_Kq8_Vq8_default_moe26
+TEST ID 2: extra_fa_Kq8_Vq4_default_moe26
+
+[PASTE RAW RESULTS BELOW THIS LINE]
+----------------------------------------------------------------
+OUTPUT FORMAT REQUIREMENT:
+1. Briefly summarize the performance delta, VRAM efficiency, and wall-clock time.
+2. Ensure the graph is high-contrast and includes a combined legend for all 5 metrics.
+3. Graph Title: gemma_4_26B_A4b_UD_Q4_K_M - cuda_flash @ 65536 ctx
+4. Plot data with Grouped Bar Chart (or Clustered Bar Chart) with Multiple Y-Axes. IMPORTANT include all TEST CONFIGURATIONS
+==================== END OF PROMPT ============================
+
+$ run_BENCH_gemma_4_26B_A4b_UD_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x
+
+Starting tests:
+TEST 1: extra_fa_Kq8_Vq8_default_moe21
+TEST 2: extra_fa_Kq8_Vq4_default_moe21
+
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 21
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 21 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 21 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 219 MiB
+[1] 9026
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 21 | 4 | q8_0 | q8_0 | 1 | 0 | pp65536 | 1069.98 � 10.83 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 21 | 4 | q8_0 | q8_0 | 1 | 0 | tg128 | 34.74 � 2.88 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 6m 43s
+Peak Dedicated VRAM: 9522 MiB
+Peak Shared Memory: 10673 MiB (baseline: 219 MiB, delta: 10454 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 21
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 21 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 21 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 96 MiB
+[1] 10588
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 21 | 4 | q8_0 | q4_0 | 1 | 0 | pp65536 | 1058.69 � 33.49 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 21 | 4 | q8_0 | q4_0 | 1 | 0 | tg128 | 37.07 � 0.74 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 6m 41s
+Peak Dedicated VRAM: 9486 MiB
+Peak Shared Memory: 10641 MiB (baseline: 96 MiB, delta: 10545 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+==================== LLM DATA ANALYST PROMPT: gemma_4_26B_A4b_UD_Q4_K_M [cuda_flash] ====================
+ROLE: Act as a Senior Performance Analyst and Python Data Scientist.
+INSTRUCTION: Provide a concise analysis and Immediately use the Python tool to parse the benchmark results from the logs above. Generate a Clustered Bar Chart.
+MODEL: gemma_4_26B_A4b_UD_Q4_K_M
+BENCHMARK: cuda_flash
+CONTEXT: 65536
+----------------------------------------------------------------
+VISUALIZATION SPECIFICATIONS:
+- Primary Y-Axis: Total Duration (s)
+- Secondary Y-Axis: Prompt Processing (t/s)
+- Tertiary Y-Axis: Token Generation (t/s)
+- Quaternary Y-Axis: Peak VRAM (MiB)
+- Quinary Y-Axis: Shared VRAM (MiB)
+- Data Labels: Annotate bars with 'Duration', 'PP', 'TG', 'Peak VRAM', 'Shared VRAM'.
+- X-Axis Labels: Use the TEST CONFIGURATION IDs provided below. IMPORTANT use full names
+
+TEST CONFIGURATIONS:
+TEST ID 1: extra_fa_Kq8_Vq8_default_moe21
+TEST ID 2: extra_fa_Kq8_Vq4_default_moe21
+
+[PASTE RAW RESULTS BELOW THIS LINE]
+----------------------------------------------------------------
+OUTPUT FORMAT REQUIREMENT:
+1. Briefly summarize the performance delta, VRAM efficiency, and wall-clock time.
+2. Ensure the graph is high-contrast and includes a combined legend for all 5 metrics.
+3. Graph Title: gemma_4_26B_A4b_UD_Q4_K_M - cuda_flash @ 65536 ctx
+4. Plot data with Grouped Bar Chart (or Clustered Bar Chart) with Multiple Y-Axes. IMPORTANT include all TEST CONFIGURATIONS
+==================== END OF PROMPT ============================
+
+
+
+$ run_BENCH_gemma_4_26B_A4b_UD_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x
+
+Starting tests:
+TEST 1: extra_fa_Kq8_Vq8_default_moe18
+TEST 2: extra_fa_Kq8_Vq4_default_moe18
+
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 18
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 18 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 18 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 229 MiB
+[1] 14572
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 18 | 4 | q8_0 | q8_0 | 1 | 0 | pp65536 | 1145.90 � 11.21 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 18 | 4 | q8_0 | q8_0 | 1 | 0 | tg128 | 32.32 � 0.68 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 6m 20s
+Peak Dedicated VRAM: 10578 MiB
+Peak Shared Memory: 9334 MiB (baseline: 229 MiB, delta: 9105 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 18
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 18 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 18 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 171 MiB
+[1] 15863
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 18 | 4 | q8_0 | q4_0 | 1 | 0 | pp65536 | 1149.89 � 9.05 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 18 | 4 | q8_0 | q4_0 | 1 | 0 | tg128 | 41.05 � 1.48 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 6m 13s
+Peak Dedicated VRAM: 10437 MiB
+Peak Shared Memory: 9316 MiB (baseline: 171 MiB, delta: 9145 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+==================== LLM DATA ANALYST PROMPT: gemma_4_26B_A4b_UD_Q4_K_M [cuda_flash] ====================
+ROLE: Act as a Senior Performance Analyst and Python Data Scientist.
+INSTRUCTION: Provide a concise analysis and Immediately use the Python tool to parse the benchmark results from the logs above. Generate a Clustered Bar Chart.
+MODEL: gemma_4_26B_A4b_UD_Q4_K_M
+BENCHMARK: cuda_flash
+CONTEXT: 65536
+----------------------------------------------------------------
+VISUALIZATION SPECIFICATIONS:
+- Primary Y-Axis: Total Duration (s)
+- Secondary Y-Axis: Prompt Processing (t/s)
+- Tertiary Y-Axis: Token Generation (t/s)
+- Quaternary Y-Axis: Peak VRAM (MiB)
+- Quinary Y-Axis: Shared VRAM (MiB)
+- Data Labels: Annotate bars with 'Duration', 'PP', 'TG', 'Peak VRAM', 'Shared VRAM'.
+- X-Axis Labels: Use the TEST CONFIGURATION IDs provided below. IMPORTANT use full names
+
+TEST CONFIGURATIONS:
+TEST ID 1: extra_fa_Kq8_Vq8_default_moe18
+TEST ID 2: extra_fa_Kq8_Vq4_default_moe18
+
+[PASTE RAW RESULTS BELOW THIS LINE]
+----------------------------------------------------------------
+OUTPUT FORMAT REQUIREMENT:
+1. Briefly summarize the performance delta, VRAM efficiency, and wall-clock time.
+2. Ensure the graph is high-contrast and includes a combined legend for all 5 metrics.
+3. Graph Title: gemma_4_26B_A4b_UD_Q4_K_M - cuda_flash @ 65536 ctx
+4. Plot data with Grouped Bar Chart (or Clustered Bar Chart) with Multiple Y-Axes. IMPORTANT include all TEST CONFIGURATIONS
+==================== END OF PROMPT ============================
+
+$ run_BENCH_gemma_4_26B_A4b_UD_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x
+
+Starting tests:
+TEST 1: extra_fa_Kq8_Vq8_default_moe16
+TEST 2: extra_fa_Kq8_Vq4_default_moe16
+
+EXTRA: lookup_key = extra_fa_Kq8_Vq8_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 16
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 16 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q8_0 --n-cpu-moe 16 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 283 MiB
+[1] 12108
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 16 | 4 | q8_0 | q8_0 | 1 | 0 | pp65536 | 1182.82 � 7.73 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 16 | 4 | q8_0 | q8_0 | 1 | 0 | tg128 | 43.98 � 1.17 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 6m 16s
+Peak Dedicated VRAM: 11475 MiB
+Peak Shared Memory: 8387 MiB (baseline: 283 MiB, delta: 8104 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+EXTRA: lookup_key = extra_fa_Kq8_Vq4_default_moeN
+EXTRA: lookup_data = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe N
+EXTRA: lookup_final = -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 16
+WARNING unhandled (used 'common') with user's bench_extra=''
+--------------------------------------------------------------
+TESTING: gemma_4_26B_A4b_UD_Q4_K_M | Bench: cuda_flash | P: 65536 | E: -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 16 | d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+TESTING: c:\Users\micha\MSE\GIT\llama.cpp\build_OPTIMIZATION\bin\Release\llama-bench -t 4 -p 65536 -n 128 -ngl 999 -m d:\.lmstudio\models\unsloth\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-UD-Q4_K_M.gguf -fa 1 -ctk q8_0 -ctv q4_0 --n-cpu-moe 16 --mmap 0
+--------------------------------------------------------------
+Baseline Shared Memory: 89 MiB
+[1] 13388
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12281 MiB):
+Device 0: NVIDIA GeForce RTX 4080 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 12281 MiB
+| model | size | params | backend | ngl | n_cpu_moe | threads | type_k | type_v | fa | mmap | test | t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | ------: | -----: | -----: | -: | ---: | --------------: | -------------------: |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 16 | 4 | q8_0 | q4_0 | 1 | 0 | pp65536 | 1185.61 � 8.66 |
+| gemma4 26B.A4B Q4_K - Medium | 15.77 GiB | 25.23 B | CUDA | 999 | 16 | 4 | q8_0 | q4_0 | 1 | 0 | tg128 | 43.63 � 1.38 |
+
+build: 30af6e2b9 (9389)
+--------------------------- RESULTS --------------------------
+Duration: 6m 14s
+Peak Dedicated VRAM: 11284 MiB
+Peak Shared Memory: 8374 MiB (baseline: 89 MiB, delta: 8285 MiB)
+STATUS: [!] Performance hit detected. Offloaded to System RAM.
+--------------------------------------------------------------
+1
+==================== LLM DATA ANALYST PROMPT: gemma_4_26B_A4b_UD_Q4_K_M [cuda_flash] ====================
+ROLE: Act as a Senior Performance Analyst and Python Data Scientist.
+INSTRUCTION: Provide a concise analysis and Immediately use the Python tool to parse the benchmark results from the logs above. Generate a Clustered Bar Chart.
+MODEL: gemma_4_26B_A4b_UD_Q4_K_M
+BENCHMARK: cuda_flash
+CONTEXT: 65536
+----------------------------------------------------------------
+VISUALIZATION SPECIFICATIONS:
+- Primary Y-Axis: Total Duration (s)
+- Secondary Y-Axis: Prompt Processing (t/s)
+- Tertiary Y-Axis: Token Generation (t/s)
+- Quaternary Y-Axis: Peak VRAM (MiB)
+- Quinary Y-Axis: Shared VRAM (MiB)
+- Data Labels: Annotate bars with 'Duration', 'PP', 'TG', 'Peak VRAM', 'Shared VRAM'.
+- X-Axis Labels: Use the TEST CONFIGURATION IDs provided below. IMPORTANT use full names
+
+TEST CONFIGURATIONS:
+TEST ID 1: extra_fa_Kq8_Vq8_default_moe16
+TEST ID 2: extra_fa_Kq8_Vq4_default_moe16
+
+[PASTE RAW RESULTS BELOW THIS LINE]
+----------------------------------------------------------------
+OUTPUT FORMAT REQUIREMENT:
+1. Briefly summarize the performance delta, VRAM efficiency, and wall-clock time.
+2. Ensure the graph is high-contrast and includes a combined legend for all 5 metrics.
+3. Graph Title: gemma_4_26B_A4b_UD_Q4_K_M - cuda_flash @ 65536 ctx
+4. Plot data with Grouped Bar Chart (or Clustered Bar Chart) with Multiple Y-Axes. IMPORTANT include all TEST CONFIGURATIONS
+==================== END OF PROMPT ============================
+
+
+
+
+
+
+
+
+
+
+

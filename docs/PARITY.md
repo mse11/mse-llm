@@ -17,8 +17,8 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | F7 | `run_serve_params` + `_FILTER`, output modes | `mse-llm serve --output` | same filtered lines | ✓ M5: `serve` runs (foreground, Ctrl+C stops the tree), `--output filter` = the `run_serve_params_FILTER` regexes; + fit pre-check |
 | F8 | `run_presets_serve`, `run_PRESETS_serve`, `run_PRESETS_dump`, `run_presets_dump` | `mse-llm presets …` | existing INI serves all 5 models | ✓ M5: `presets serve` (foreground / `--background`, `--load`), `validate`, `fix`, `list`, `dump`, `generate`, `status`, `load`/`unload`, `watch`, `stop`; all 5 models listed, two models switched through one endpoint; the generated INI validates and maps back to every `default_serve` |
 | F9 | `EXEC_cmd_with_gpu_and_ram_monitoring` | `monitor/` | peaks within tolerance | ✓ M6: run side by side with the real bash function on one Qwen3.6-28B load: shared 16063 vs 16064 MiB, temp 53 vs 53 °C, dedicated 4728 vs 4442 MiB (bash samples every ~2 s); RAM differs because of a bash bug (below). Live memory guard added |
-| F10 | `run_dump_params_wrapper_PLOTER` | `mse-llm report chart` (+ `--legacy-log`) | old logs give the same chart | ☐ M8 |
-| F11 | `run_dump_params_wrapper_AI_PROMPT/_COMMON/_EXTRAS/_PROMPTS` | `mse-llm report prompt` | same sections + data | ☐ M8 |
+| F10 | `run_dump_params_wrapper_PLOTER` | `mse-llm report chart` (+ `--legacy-log`) | old logs give the same chart | ✓ M8: the bash plotter ported line for line (`report/plot.py`, `parsers/legacy_log.py`); on the same old log the PNG is pixel-identical to the one the real bash function draws (0 of 8.5 M pixels differ; opt-in test `MSE_LLM_BASH_PARITY=1`). Reads the old `.txt` logs and the `_RESULTS/*.html` pages they were pasted into; new results chart through the same code |
+| F11 | `run_dump_params_wrapper_AI_PROMPT/_COMMON/_EXTRAS/_PROMPTS` | `mse-llm report prompt` | same sections + data | ✓ M8: Jinja2 template with the bash sections (role, instruction, model / benchmark / context, chart specs, TEST ID list, output requirements); the data is embedded as CSV (per run + per test) instead of "[PASTE RAW RESULTS BELOW THIS LINE]" |
 | F12 | `run_inspect_params*` | `mse-llm eval` | real eval runs | ◐ M3: `eval MODEL TASK --dry-run` = the bash builder (URL from the engine); running in M12 |
 | F13 | `EXEC_user_notification_WIN_T2S` | `notify.py` | voice message at end of run | ✓ M6: SAPI through COM (no powershell); `serve` / `presets serve` / `monitor -- CMD` speak at the end; `--no-notify`, `mse-llm notify TEXT` |
 | F14 | `EXEC_cmd_with_output_mode` (all/filter/none) | `--output` | — | ✓ M5: `--output all\|filter\|none`, `[defaults].output`, `[defaults].output_filter` (default: the bash list) |
@@ -206,3 +206,23 @@ Every built llama-server / llama-bench argv is also checked against the engine's
     `--dry-run` to refuse had started a real 131072-token llama-bench.
   * Not in M7: `results compare` / `export --csv` (M8 with the reports); eval sweeps (M12).
   * `results/` is git-ignored for now (your decision, 2026-11-19); the store itself is unchanged.
+* **M8 (2026-11-19):** `report/` (`plot.py` the 5-axis chart, `data.py` run selection + rows, `prompts/analyst.md.j2`),
+  `parsers/legacy_log.py`, `cli_report.py`: `report chart | table | prompt`, `results compare | export`.
+  * **Chart parity:** the bash plotter's parser and matplotlib code are ported as they are. On the converted
+    gemma-4-26B UD log (17 blocks) the bash function and `report chart --legacy-log` give PNGs with 0 differing
+    pixels (same matplotlib 3.11.2). Kept bash quirks for old logs: llama-bench `-p N` shows as "Ctx:default",
+    values are cut at `-` (`--spec-type draft-mtp` -> "Spec:draft"), missing duration / VRAM / shared are drawn
+    as 100 s / 4000 / 12000 (labelled with those numbers).
+  * **New results** chart through the same code: labels from the run's argv with the same regexes, but with the
+    real ctx; duration = time under the monitor minus the server start (stacked below for benchy); VRAM = peak
+    dedicated; shared = the bash number (Non Local Usage sum, adapter-wide). Missing values are drawn as 0.
+    One bar per (tool, model, variant, ctx, params): the newest run wins (`--all-runs` shows every run).
+    Labels differ from a bash chart of the same variant only where M3 changed the argv (`-lm none` instead of
+    `--mmap 0` -> "lm:none").
+  * **Old logs:** the bash `.txt` logs, and the `_RESULTS/RESULTS_run_BENCH_*.html` pages they were pasted into
+    (`<br>` / `&nbsp;` converted back): all 6 pages parse (95 benchmark blocks); two are kept as test fixtures.
+  * `report prompt`: the bash analyst prompt with the data embedded as CSV; `report table` (best PP / TG marked,
+    `--format csv | md`, `--tests`); `results compare A B` (settings that differ, PP / TG / memory deltas);
+    `results export --csv` (per run or `--tests`).
+  * matplotlib, numpy and jinja2 are normal dependencies, not the optional `[report]` extra the plan named, so
+    `uv run mse-llm report chart` works without an extra install step.

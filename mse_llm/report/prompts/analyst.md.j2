@@ -1,0 +1,75 @@
+==================== LLM DATA ANALYST PROMPT: {{ title }} ====================
+ROLE: Act as a Senior Performance Analyst and Python Data Scientist.
+INSTRUCTION: Provide a concise analysis, then use the Python tool to parse the benchmark data embedded below
+(CSV, one row per run) and generate a Clustered Bar Chart.
+MODEL: {{ models | join(", ") }}
+BENCHMARK: {{ tools | join(", ") }} ({{ engines | join(", ") }}{% if builds %}, llama.cpp {{ builds | join(", ") }}{% endif %})
+CONTEXT: {{ ctxs | join(", ") }}
+{% if hw %}HARDWARE: {{ hw }}
+{% endif %}----------------------------------------------------------------
+VISUALIZATION SPECIFICATIONS:
+Chart type: Grouped/Clustered Bar Chart, 5 vertical bars per configuration.
+Figure size: (30, 10) inches. White background throughout.
+
+Y-AXES (5 total, color-coded):
+  Left primary         : Token Generation (t/s)    color=#1565c0  max=auto   (column tg_tps)
+  Left offset (ax2)    : Prompt Processing (t/s)   color=#5dade2  max=auto   (column pp_tps)
+  Left offset-2 (ax3)  : Total Duration (s)        color=#e74c3c  max=auto   (column duration_s)
+  Right primary        : Peak VRAM (MiB)           color=#81c784  max=auto   (column vram_peak_mib)
+  Right offset (ax5)   : Shared VRAM (MiB)         color=#2e7d32  max=auto   (column server_shared_mib)
+  ax2 spine: ('axes', -0.06)  ax3 spine: ('axes', -0.13)  ax4 spine: ('axes', 1.06) ticks/label on right. ax5 spine: ('axes', 1.13) ticks/label on right.
+
+BAR LAYOUT:
+  5 bars per group, bar_width=0.16, offsets=[-2, -1, 0, +1, +2] * bar_width.
+  Bar order (left to right): Duration | PP | TG | Peak VRAM | Shared VRAM
+  Colors: Duration=#e74c3c  PP=#5dade2  TG=#1565c0  VRAM=#81c784  SharedRAM=#2e7d32. Alpha=0.85.
+
+DATA LABELS:
+  Rotated 90deg, fontsize=7.0, above each bar (y = value + 0.8% of axis max).
+  Format: Duration->mm:ss  PP->1 decimal  TG->1 decimal  VRAM->integer+'M'  SharedRAM->integer+'M'
+  Label color matches bar color.
+
+X-AXIS LABELS: the TEST CONFIGURATION IDs below (full names). Rotation=35, ha='right', fontsize=8.0.
+
+BACKGROUND REGION BANDS: one band per model (Config Set A, B, C), background #fff3e0 / #ffe0b2 / #ffcc80,
+bold region label at the top of each band, dashed vertical dividers between regions.
+
+LEGEND: upper center, above the chart, ncol=8: Duration, PP, TG, VRAM, SharedRAM + one patch per region.
+TITLE: '{{ title }}'  fontsize=13, fontweight='bold'.
+GRID: Horizontal only, color='#cccccc', linewidth=0.5, alpha=0.6.
+OUTPUT: PNG, dpi=180, bbox_inches='tight', facecolor='white'.
+{% if chart %}
+(mse-llm already drew this chart: {{ chart }}; reproduce it, or improve on it if the data asks for a different view.)
+{% endif %}
+TEST CONFIGURATIONS:
+{% for r in runs %}TEST ID {{ loop.index }}: {{ r.variant }}{% if r.ctx %} @ ctx {{ r.ctx }}{% endif %}{% if r.note %}   # {{ r.note }}{% endif %}
+{% endfor %}
+VARIANT NAME KEY: fa = flash attention; Kq8 / Vq4 = K / V cache type q8_0 / q4_0; bN / ubN = batch / ubatch;
+moeN = N MoE expert layers on the CPU (--n-cpu-moe); sdN<type> = speculative decoding with N draft tokens;
+default = llama.cpp default batch sizes.
+
+COLUMN KEY: pp_tps / tg_tps = prompt processing / token generation tokens per second (llama-bench: pp at the
+largest prompt, tg of the first generation test; benchy: at the largest prompt, depth 0); *_std = standard
+deviation over repetitions; ttft_ms = time to first token (benchy); vram_peak_mib = peak dedicated VRAM of the
+GPU; server_shared_mib = peak shared GPU memory of the benchmark process (pinned host buffers for CPU experts
+count here: that is NOT a spill); spill_mib = shared memory beyond what `llama-fit-params` expects (> ~100 MiB
+= a real spill into system RAM); fit = llama-fit-params verdict before the run; status: ok | aborted (stopped by
+the memory guard) | failed | skipped (did not fit, never started).
+
+DATA (CSV, {{ runs | length }} run{{ "s" if runs | length != 1 }}):
+```csv
+{{ csv }}```
+{% if tests_csv %}
+PER-TEST DATA (CSV: every llama-bench / benchy test of these runs):
+```csv
+{{ tests_csv }}```
+{% endif %}
+----------------------------------------------------------------
+OUTPUT FORMAT REQUIREMENT:
+1. Briefly summarize the performance delta, VRAM efficiency, and wall-clock time across the configurations.
+2. Note the effect of each configuration parameter where the data shows one (K/V cache type, batch/ubatch,
+   MoE layers on the CPU, speculative decoding).
+3. Flag any anomalies or outliers (aborted / failed runs, spills, large standard deviations).
+4. Recommend the configuration to keep, and say what to try next.
+5. Produce the chart per the specifications above; include all TEST CONFIGURATIONS.
+==================== END OF PROMPT ============================

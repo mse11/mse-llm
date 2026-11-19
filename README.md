@@ -114,6 +114,20 @@ uv run mse-llm results list [--model M] [--sweep S]
 uv run mse-llm results show RUN_ID              # tests, fit, monitor peaks, the command to reproduce it
 ```
 
+Reports (M8). The bash 5-axis chart (duration, PP, TG, peak VRAM, shared memory per configuration), tables and
+the AI analyst prompt, from the stored runs or from an old bash log. Output: `results/reports/<name>/`.
+
+```
+uv run mse-llm report chart --sweep Qwen36_35B_A3B_UD_Q4_K_M_MTP_bench   # bash run_dump_params_wrapper_PLOTER
+uv run mse-llm report chart --legacy-log old_log.txt                       # old .txt log or _RESULTS/*.html page
+uv run mse-llm report table --model gemma --sort tg [--format csv|md] [--tests]
+uv run mse-llm report prompt --sweep NAME --chart -o prompt.md            # bash run_dump_params_wrapper_AI_PROMPT
+uv run mse-llm results compare RUN_A RUN_B
+uv run mse-llm results export --csv runs.csv [--tests]
+```
+
+One bar per configuration: the newest run of the same tool / model / variant / ctx wins (`--all-runs` for all).
+
 Sweep entries keep the bash comments as data: `status = "off"` (commented out: `--include-off`),
 `status = "skip"` ("PC freeze": only with `--force`), `note` and `tag` (sweetspot, sporadic-freeze, ...).
 `--resume` skips variants that already have an `ok` result for the same build. Exit code 1 if a job failed,

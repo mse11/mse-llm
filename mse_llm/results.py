@@ -249,6 +249,7 @@ def hw_record(root: Path | None = None) -> dict[str, Any]:
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_text(json.dumps(ident, indent=2) + "\n", encoding="utf-8")
     nv = info.nvidia_gpus()
-    power = getattr(info.power, "source", None)
+    ac = getattr(info.power, "ac_online", None)
+    power = None if ac is None else ("AC power" if ac else "on battery")
     return {"hash": ident["hash"], "soft_hash": ident["soft_hash"], "driver": ident["soft"].get("driver"),
             "gpu": nv[0].name if nv else None, "power": power}

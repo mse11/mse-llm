@@ -33,7 +33,7 @@ Binaries land in `builds\llama.cpp\build\bin\Release`, the folder the bash scrip
 `MSE_LLAMA_BIN_DIR` uses. Full logs: `builds\logs\`.
 
 Variants and commands (M3: `--dry-run` shows the exact argv, checked against the llama.cpp help
-snapshot; `serve` / `presets` run since M5, bench/benchy in M7, eval in M12):
+snapshot; `serve` / `presets` run since M5, bench/benchy/sweep since M7, eval in M12):
 
 ```
 uv run mse-llm models list
@@ -95,6 +95,29 @@ uv run mse-llm monitor --guard --expect-host 15807 -- llama-bench.exe -m X.gguf 
 uv run mse-llm serve omnicoder_9b --no-guard | --no-monitor | --mem-cap 40000
 uv run mse-llm --no-notify serve ...                          # no voice message at the end
 ```
+
+Benchmarks, sweeps, results (M7). Every job runs the fit check first (a variant that doesn't fit is recorded
+as `skipped` and not started; `--force` starts it anyway) and runs under the memory guard, which for benchmarks
+also stops a job that hangs (GPU idle, no disk reads, VRAM unchanged for `[monitor].stall_stop_s`, 90 s). Each
+job writes one JSON to `results/runs/YYYY-MM/` and a line to `results/index.jsonl`. Logs, benchy's own JSON
+and the monitor CSV go to `results/raw/<run_id>/`. `results/` is not stored in git for now (`.gitignore`).
+
+```
+uv run mse-llm bench omnicoder_9b -v "fa_Kq8_Vq{8,4}_default" --ctx 8192 --ctx 32768   # run_bench_params*, _wrapper_PROMPTS
+uv run mse-llm benchy omnicoder_9b --ctx 65536 --pp 512 --pp 8192 --depth 0 --depth 4096   # background server + llama-benchy
+uv run mse-llm sweep list                       # one sweep per bash run_BENCH_* / run_BENCHY_* / run_INSPECT_* function
+uv run mse-llm sweep show Qwen36_35B_A3B_UD_Q4_K_M_MTP_bench   # entries, status, bash notes, last result per variant
+uv run mse-llm sweep run Qwen36_35B_A3B_UD_Q4_K_M_MTP_bench    # the entries with status on (= not commented out in bash)
+uv run mse-llm sweep run Qwen36_28B_REAP20_A3B_Q4_K_M_bench --include-off --match "*b4096_ub4096*" --resume
+uv run mse-llm sweep run NAME --only-failed     # re-run what failed / was aborted on this build
+uv run mse-llm results list [--model M] [--sweep S]
+uv run mse-llm results show RUN_ID              # tests, fit, monitor peaks, the command to reproduce it
+```
+
+Sweep entries keep the bash comments as data: `status = "off"` (commented out: `--include-off`),
+`status = "skip"` ("PC freeze": only with `--force`), `note` and `tag` (sweetspot, sporadic-freeze, ...).
+`--resume` skips variants that already have an `ok` result for the same build. Exit code 1 if a job failed,
+2 if the guard stopped one.
 
 `--fit` only adjusts what you did not set: with `-ngl all` (always passed by `serve`) or `-ncmoe`, llama.cpp
 aborts the fit and starts with exactly the requested settings, so a config that doesn't fit is not shrunk.

@@ -195,3 +195,82 @@ def test_job_memory_cap_is_set():
     info = asyncio.run(go())
     assert info["JobMemoryLimit"] == 512 * 2**20
     assert info["BasicLimitInformation"]["LimitFlags"] & win32job.JOB_OBJECT_LIMIT_JOB_MEMORY
+
+
+# ---------------------------------------------------------------- rule D: hangs (M7)
+
+def test_stall_rule_needs_no_progress_for_the_whole_window():
+    """llama-bench + 35B at -ncmoe 10, measured: VRAM 10.1 GB of the process, GPU 0 %, no reads, 10 min."""
+    g = Guard(GuardCfg(stall_stop_s=90), row())
+    hung = dict(proc_rss_mib=5562, proc_read_mib=24, proc_vram_mib=10149, gpu_util_pct=0, vram_free_mib=1051)
+    assert g.check(row(t=0, **hung)) is None
+    assert g.check(row(t=60, **hung)) is None
+    assert g.check(row(t=70, **{**hung, "proc_read_mib": 900})) is None        # loading = progress: resets
+    assert g.check(row(t=150, **{**hung, "proc_read_mib": 900})) is None       # 80 s since
+    r = g.check(row(t=161, **{**hung, "proc_read_mib": 900}))
+    assert r and r.startswith("no progress for 91 s")
+
+
+def test_stall_rule_averages_gpu_blips():
+    """The measured forced run: 0-1 % with single 14 % / 20 % blips (other programs) for 140 s."""
+    g = Guard(GuardCfg(stall_stop_s=90), row())
+    hung = dict(proc_rss_mib=5562, proc_read_mib=23, proc_vram_mib=9957)
+    utils = [0, 0, 14, 0, 1, 0, 20, 0, 0, 0]
+    trips = [g.check(row(t=t, gpu_util_pct=utils[i % len(utils)], **hung)) for i, t in enumerate(range(0, 101, 2))]
+    assert trips[-1] and "mean" in trips[-1] and not any(trips[:-6])
+
+
+def test_stall_rule_ignores_busy_gpu_and_is_off_by_default():
+    busy = dict(proc_rss_mib=5000, proc_read_mib=1, proc_vram_mib=9000, gpu_util_pct=97)
+    g = Guard(GuardCfg(stall_stop_s=10), row())
+    assert all(g.check(row(t=t, **busy)) is None for t in range(0, 100, 5))
+    off = Guard(GuardCfg(), row())                                             # serve: an idle server is fine
+    assert all(off.check(row(t=t, **{**busy, "gpu_util_pct": 0})) is None for t in range(0, 500, 50))
+
+
+def test_blocked_driver_trips():
+    g = Guard(GuardCfg(stall_stop_s=30), row())
+    assert g.check(row(t=10, proc_rss_mib=1, stuck_nvml_s=12)) is None
+    assert "GPU driver not responding" in g.check(row(t=40, proc_rss_mib=1, stuck_nvml_s=31))
+
+
+class Blocking(Script):
+    """Like NVML while a hung CUDA process holds the driver: the second call never returns."""
+
+    name = "nvml"
+
+    def __init__(self) -> None:
+        super().__init__([row()])
+        import threading
+
+        self.release = threading.Event()
+
+    def sample(self, pids):
+        if self.i >= 1:
+            self.release.wait()
+        self.i += 1
+        return {"gpu_util_pct": 0}
+
+
+def test_blocked_sampler_does_not_stop_the_monitor():
+    blocked = Blocking()
+    other = Script([row(proc_rss_mib=10, proc_read_mib=5, proc_vram_mib=9000)])
+
+    async def go():
+        m = Monitor(0.05, guard=GuardCfg(stall_stop_s=0.6), samplers=[blocked, other])
+        m.sample_timeout = 0.1
+        async with m:
+            await asyncio.wait_for(m.trip_event.wait(), 10)
+        return m
+    m = asyncio.run(go())
+    blocked.release.set()
+    assert m.tripped and ("GPU driver not responding" in m.tripped or "no progress" in m.tripped)
+    assert any("stuck_nvml_s" in s for s in m.samples)
+    assert len(m.samples) >= 5                      # kept sampling the other sampler meanwhile
+
+
+def test_drafter_buffers_are_allowed_in_rule_b():
+    """gemma QAT + MTP drafter, measured: 9558 MiB shared vs fit's 9327 MiB main-model host part, VRAM 4 GB free."""
+    s = row(proc_shared_mib=9558, vram_used_mib=8324, vram_free_mib=4119)
+    assert "spill" in Guard(GuardCfg(expected_host_mib=9327), row()).check(s)
+    assert Guard(GuardCfg(expected_host_mib=9327, host_extra_mib=240 + 2100), row()).check(s) is None

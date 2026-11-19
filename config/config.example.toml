@@ -37,6 +37,7 @@ vram_full_mib = 256         # dedicated VRAM counts as full below this much free
 host_tolerance_pct = 2.0    # allowed error of fit's host-buffer size (measured: 0.5 %)
 ram_stop_pct = 95.0
 commit_stop_pct = 95.0
+stall_stop_s = 90           # bench / benchy: stop when GPU idle + no disk reads + VRAM unchanged this long (0 = off)
 # job_memory_cap_mib = 40000  # Windows Job Object cap on the server tree's commit; on WDDM VRAM counts too
 ram_warn_pct = 60.0         # bash status thresholds
 ram_fail_pct = 80.0
@@ -144,3 +145,251 @@ serve_extra = { jinja = true, reasoning-format = "auto", temp = 1.0, top-k = 64,
 default_serve = "fa_Kq8_Vq8_b2048_ub2048_moe16"              # SWEETSPOT (SD off)
 default_serve_spec = "fa_Kq8_Vq8_b2048_ub2048_moe21_sd4mtp"  # SWEETSPOT (SD on): bash SD_ENABLED=1
 notes = "16.5 GB file (Jun 9 update: added MTP support). Batching does NOT help (flat or minimal)."
+
+# ---------------------------------------------------------------- sweeps (M7)
+# One [sweeps.NAME] per bash run_BENCH_* / run_BENCHY_WITH_SERVER_* / run_INSPECT_* function (`bash` = which one),
+# generated from the script's extras_list arrays: every entry in order, with its comment as `note`.
+#   status = "on"    runs with `mse-llm sweep run NAME` (it was not commented out in bash)
+#   status = "off"   was commented out: runs with --include-off (or flip it to "on", or use --match GLOB)
+#   status = "skip"  a "PC freeze" note: never started without --force
+#   tag              sweetspot | freeze | sporadic-freeze | skipped (from the note)
+# Every job is checked with `fit` first (a no-fit variant is recorded as skipped) and runs under the memory guard.
+# Optional per sweep: prompts = [..] (bench: one llama-bench run per -p size, bash _wrapper_PROMPTS), tg = [..],
+# repetitions = N; benchy: pp = [..], depth = [..], runs = N, concurrency = [..]. Unset = [defaults].
+# A structured matrix works too: matrix = { ctk=["q8_0"], ctv=["q8_0","q4_0"], b_ub=[[2048,2048]], n_cpu_moe=[18,21] }
+
+[sweeps.omnicoder_9b_bench]
+bash = "run_BENCH_omnicoder_9b_CTX_cuda_flash"
+model = "omnicoder_9b"
+tool = "bench"
+ctx = 131072
+variants = [
+  "fa_Vq8_default",
+  "fa_Kq8_Vq4_default",
+  "fa_Kq8_Vq8_default",
+  "fa_Kq4_Vq8_default",
+]
+
+[sweeps.Qwen36_35B_A3B_UD_Q4_K_M_MTP_bench]
+bash = "run_BENCH_Qwen36_35B_A3B_UD_Q4_K_M_MTP_CTX_cuda_flash_CFG_MOE_on_x_CTX_x"
+model = "Qwen36_35B_A3B_UD_Q4_K_M_MTP"
+tool = "bench"
+ctx = 65536
+variants = [
+  "fa_Kq8_Vq8_default_moe41",
+  "fa_Kq8_Vq4_default_moe41",
+  { v = "fa_Kq8_Vq8_default_moe36", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe36", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe34", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe34", status = "off", note = "SWEETSPOT (CTX==65536)", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_default_moe33", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq4_default_moe33", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq8_default_moe30", status = "skip", note = "PC freeze (CTX==65536)", tag = "freeze" },
+  { v = "fa_Kq8_Vq4_default_moe30", status = "skip", note = "PC freeze (CTX==65536)", tag = "freeze" },
+]
+
+[sweeps.Qwen36_28B_REAP20_A3B_Q4_K_M_bench]
+bash = "run_BENCH_Qwen36_28B_REAP20_A3B_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x"
+model = "Qwen36_28B_REAP20_A3B_Q4_K_M"
+tool = "bench"
+ctx = 65536
+variants = [
+  { v = "fa_Kq8_Vq8_default_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b2048_ub256_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_b2048_ub256_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b2048_ub512_moe41", status = "off", note = "SKIPPED like default", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b2048_ub512_moe41", status = "off", note = "SKIPPED like default", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b2048_ub1024_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_b2048_ub1024_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_b2048_ub2048_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b8192_ub8192_moe41", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq4_b8192_ub8192_moe41", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq8_b6144_ub6144_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_b6144_ub6144_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub4096_moe41", status = "off", note = "SWEETSPOT 1. step", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq4_b4096_ub4096_moe41", status = "off", note = "SWEETSPOT 1. step", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b4096_ub2048_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub2048_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub1024_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub1024_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub512_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub512_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub256_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub256_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe34", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe34", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe28", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe28", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe23", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq4_default_moe23", status = "off", note = "PC seems to be OK" },
+  { v = "fa_Kq8_Vq8_default_moe20", status = "skip", note = "PC freeze (CTX==65536)", tag = "freeze" },
+  { v = "fa_Kq8_Vq4_default_moe20", status = "skip", note = "PC freeze (CTX==65536)", tag = "freeze" },
+]
+
+[sweeps.Qwen36_28B_REAP20_A3B_Q4_K_M_benchy]
+bash = "run_BENCHY_WITH_SERVER_Qwen36_28B_REAP20_A3B_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x"
+model = "Qwen36_28B_REAP20_A3B_Q4_K_M"
+tool = "benchy"
+ctx = 65536
+variants = [
+  { v = "fa_Kq8_Vq8_default_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b6144_ub6144_moe41", status = "off" },
+  { v = "fa_Kq8_Vq4_b6144_ub6144_moe41", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub4096_moe41", status = "off", note = "SWEETSPOT 1. step", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq4_b4096_ub4096_moe41", status = "off", note = "SWEETSPOT 1. step", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b4096_ub4096_moe41_sd3cache", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub4096_moe41_sd3cache", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub4096_moe41_sd2cache", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub4096_moe41_sd2cache", status = "off" },
+]
+
+[sweeps.GLM_47_Flash_REAP_23B_A3B_Q4_K_M_bench]
+bash = "run_BENCH_GLM_47_Flash_REAP_23B_A3B_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x"
+model = "GLM_47_Flash_REAP_23B_A3B_Q4_K_M"
+tool = "bench"
+ctx = 65536
+variants = [
+  { v = "fa_Kq8_Vq8_default_moe49", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe49", status = "off" },
+  { v = "fa_Kq8_Vq8_b2048_ub256_moe49", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b2048_ub256_moe49", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b2048_ub512_moe49", status = "off", note = "SKIPPED like default", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b2048_ub512_moe49", status = "off", note = "SKIPPED like default", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b2048_ub1024_moe49", status = "off" },
+  { v = "fa_Kq8_Vq4_b2048_ub1024_moe49", status = "off" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe49", status = "off" },
+  { v = "fa_Kq8_Vq4_b2048_ub2048_moe49", status = "off" },
+  { v = "fa_Kq8_Vq8_b8192_ub8192_moe49", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq4_b8192_ub8192_moe49", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq8_b6144_ub6144_moe49", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq4_b6144_ub6144_moe49", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq8_b4096_ub4096_moe49", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub4096_moe49", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub2048_moe49", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub2048_moe49", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub1024_moe49", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub1024_moe49", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub512_moe49", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b4096_ub512_moe49", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b4096_ub256_moe49", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b4096_ub256_moe49", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_default_moe49", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe49", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe40", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe40", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe28", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe28", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe23", status = "skip", note = "PC freeze (CTX==65536)", tag = "freeze" },
+  { v = "fa_Kq8_Vq4_default_moe23", status = "skip", note = "PC freeze (CTX==65536)", tag = "freeze" },
+]
+
+[sweeps.gemma_4_26B_A4b_UD_Q4_K_M_bench]
+bash = "run_BENCH_gemma_4_26B_A4b_UD_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x"
+model = "gemma_4_26B_A4b_UD_Q4_K_M"
+tool = "bench"
+ctx = 65536
+notes = "Batching Works - Generic quantization that benefits from batched computation to amortize overhead"
+variants = [
+  { v = "fa_Kq8_Vq8_default_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b2048_ub256_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b2048_ub256_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b2048_ub512_moe31", status = "off", note = "SKIPPED like default", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b2048_ub512_moe31", status = "off", note = "SKIPPED like default", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b2048_ub1024_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_b2048_ub1024_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_b2048_ub2048_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b8192_ub8192_moe31", status = "skip", note = "PC freeze TERRIBLE  (CTX==65536)", tag = "freeze" },
+  { v = "fa_Kq8_Vq4_b8192_ub8192_moe31", status = "skip", note = "PC freeze TERRIBLE  (CTX==65536)", tag = "freeze" },
+  { v = "fa_Kq8_Vq8_b6144_ub6144_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_b6144_ub6144_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub4096_moe26", status = "off", note = "SWEETSPOT 1. step - !!! BAD SURPRISE !!!", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b4096_ub4096_moe31", status = "off", note = "SWEETSPOT 1. step", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq4_b4096_ub4096_moe31", status = "off", note = "SWEETSPOT 1. step", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b4096_ub2048_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub2048_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub1024_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub1024_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub512_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b4096_ub512_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b4096_ub256_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b4096_ub256_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_default_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe26", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe26", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe21", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe21", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe18", status = "off", note = "SWEETSPOT (CTX==65536)", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq4_default_moe18", status = "off" },
+  { v = "fa_Kq8_Vq8_default_moe16", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+  { v = "fa_Kq8_Vq4_default_moe16", status = "off", note = "PC freezing sporadicaly (CTX==65536)", tag = "sporadic-freeze" },
+]
+
+[sweeps.gemma_4_26B_A4b_UD_Q4_K_M_mmlu_pro]
+bash = "run_INSPECT_gemma_4_26B_A4b_UD_Q4_K_M_CTX_cuda_flash_mmlu_pro"
+model = "gemma_4_26B_A4b_UD_Q4_K_M"
+tool = "eval"
+ctx = 65536
+task = "mmlu_pro"
+variants = [
+  "fa_Kq8_Vq8_b4096_ub4096_moe31",
+]
+
+[sweeps.gemma_4_26B_A4b_QAT_UD_Q4_K_XL_bench]
+bash = "run_BENCH_gemma_4_26B_A4b_QAT_UD_Q4_K_XL_CTX_cuda_flash_CFG_MOE_on_x_CTX_x"
+model = "gemma_4_26B_A4b_QAT_UD_Q4_K_XL"
+tool = "bench"
+ctx = 65536
+notes = "Batching NOT Helps - Flat or minimal improvement with batching"
+variants = [
+  { v = "fa_Kq8_Vq8_default_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_default_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b2048_ub256_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b2048_ub256_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b2048_ub512_moe31", status = "off", note = "SKIPPED like default", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b2048_ub512_moe31", status = "off", note = "SKIPPED like default", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b2048_ub1024_moe31", status = "off", note = "SKIPPED based on gemma_4_26B_A4b_UD_Q4_K_M", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b2048_ub1024_moe31", status = "off", note = "SKIPPED based on gemma_4_26B_A4b_UD_Q4_K_M", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe26", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe21", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe18", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe16", status = "off", note = "SWEETSPOT 1. finding FOUND (SD off)", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe31", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq4_b2048_ub2048_moe31", status = "off", note = "SWEETSPOT 1. step", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b8192_ub8192_moe31", status = "skip", note = "SKIPPED based on gemma_4_26B_A4b_UD_Q4_K_M PC - freeze TERRIBLE  (CTX==65536)", tag = "freeze" },
+  { v = "fa_Kq8_Vq4_b8192_ub8192_moe31", status = "skip", note = "SKIPPED based on gemma_4_26B_A4b_UD_Q4_K_M PC - freeze TERRIBLE  (CTX==65536)", tag = "freeze" },
+  { v = "fa_Kq8_Vq8_b6144_ub6144_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_b6144_ub6144_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub4096_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub4096_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub2048_moe31", status = "off" },
+  { v = "fa_Kq8_Vq4_b4096_ub2048_moe31", status = "off" },
+  { v = "fa_Kq8_Vq8_b4096_ub1024_moe31", status = "off", note = "SKIPPED based on gemma_4_26B_A4b_UD_Q4_K_M", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b4096_ub1024_moe31", status = "off", note = "SKIPPED based on gemma_4_26B_A4b_UD_Q4_K_M", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b4096_ub512_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b4096_ub512_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq8_b4096_ub256_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+  { v = "fa_Kq8_Vq4_b4096_ub256_moe31", status = "off", note = "SKIPPED", tag = "skipped" },
+]
+
+[sweeps.gemma_4_26B_A4b_QAT_UD_Q4_K_XL_benchy]
+bash = "run_BENCHY_WITH_SERVER_gemma_4_26B_A4b_QAT_UD_Q4_K_XL_CTX_cuda_flash_CFG_MOE_on_x_CTX_x"
+model = "gemma_4_26B_A4b_QAT_UD_Q4_K_XL"
+tool = "benchy"
+ctx = 65536
+variants = [
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe21_sd10mtp", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe21_sd6mtp", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe21_sd5mtp", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe21_sd4mtp", status = "off", note = "SWEETSPOT 1. finding FOUND (SD on)", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe21_sd3mtp", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe21", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe18_sd4mtp", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe18_sd3mtp", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+  { v = "fa_Kq8_Vq8_b2048_ub2048_moe18", status = "off", note = "SWEETSPOT 1. finding", tag = "sweetspot" },
+]

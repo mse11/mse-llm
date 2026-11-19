@@ -16,27 +16,23 @@ _LVL = {"pass": "[green]✓[/]", "warn": "[yellow]⚠[/]", "fail": "[red]![/]"}
 
 
 def guard_cfg(ctx: Ctx, *, enabled: bool = True, expected_host_mib: float | None = None):
-    from mse_llm.monitor import GuardCfg
+    from mse_llm.monitor import guard_cfg_from
 
-    m = ctx.cfg.monitor
-    return GuardCfg(spill_stop_mib=m.spill_stop_mib, vram_full_mib=m.vram_full_mib, ram_stop_pct=m.ram_stop_pct,
-                    commit_stop_pct=m.commit_stop_pct, expected_host_mib=expected_host_mib,
-                    host_tolerance_pct=m.host_tolerance_pct, enabled=enabled and m.guard)
+    return guard_cfg_from(ctx.cfg.monitor, enabled=enabled, expected_host_mib=expected_host_mib)
 
 
 def thresholds(ctx: Ctx):
-    from mse_llm.monitor import Thresholds
+    from mse_llm.monitor import thresholds_from
 
-    m = ctx.cfg.monitor
-    return Thresholds(m.spill_stop_mib, m.ram_warn_pct, m.ram_fail_pct, m.temp_warn_c, m.temp_fail_c)
+    return thresholds_from(ctx.cfg.monitor)
 
 
 def make_monitor(ctx: Ctx, *, guard: bool, expected_host_mib: float | None = None, csv_path: Path | None = None,
-                 on_trip=None, on_sample=None):
-    from mse_llm.monitor import Monitor
+                 on_trip=None, on_sample=None, host_extra_mib: float = 0.0):
+    from mse_llm.monitor import monitor_from
 
-    return Monitor(ctx.cfg.monitor.interval, guard=guard_cfg(ctx, enabled=guard, expected_host_mib=expected_host_mib),
-                   csv_path=csv_path, on_trip=on_trip, on_sample=on_sample, thresholds=thresholds(ctx))
+    return monitor_from(ctx.cfg.monitor, guard=guard, expected_host_mib=expected_host_mib, csv_path=csv_path,
+                        on_trip=on_trip, on_sample=on_sample, host_extra_mib=host_extra_mib)
 
 
 def _dur(s: float) -> str:

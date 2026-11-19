@@ -18,6 +18,15 @@ growing while dedicated stays full. The guard therefore stops a run when
   B. the server's shared memory exceeds the host buffers `fit` expects (expected_host_mib) by more than
      spill_stop_mib (or host_tolerance_pct of the expected size, whichever is larger), or
   C. system RAM or the commit charge passes ram_stop_pct / commit_stop_pct.
+
+For benchmarks (stall_stop_s set) a no-fit config can also *hang* instead of spilling (found in M7: llama-bench
+with the 35B at -ncmoe 10 sat 10 min at 0 % GPU, VRAM nearly full, one thread spinning in the driver), so:
+
+  D. no progress for stall_stop_s (GPU idle, no disk reads by the tree, its VRAM unchanged), or the GPU driver
+     not answering NVML calls for that long (a hung llama-bench blocks NVML for every process).
+
+Each sampler runs in its own daemon thread with a time limit, so a blocked driver call never stops the
+monitor loop (the other samplers and the guard keep running) and never keeps mse-llm from exiting.
 """
 
 from __future__ import annotations
@@ -26,6 +35,7 @@ import asyncio
 import csv
 import inspect
 import math
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -49,7 +59,11 @@ class GuardCfg:
     commit_stop_pct: float = 95.0
     expected_host_mib: float | None = None
     host_tolerance_pct: float = 2.0
+    host_extra_mib: float = 0.0          # drafter / mmproj buffers that may be host or VRAM (fit can't tell)
     enabled: bool = True
+    # no progress for this long (GPU idle, no disk reads, VRAM unchanged) = stalled; None = off.
+    # Only for benchmarks: an idle server waiting for requests looks the same.
+    stall_stop_s: float | None = None
 
 
 class Guard:
@@ -57,6 +71,44 @@ class Guard:
         self.cfg = cfg
         self.baseline = baseline
         self._full_at: float | None = None      # server shared MiB when dedicated VRAM became full
+        self._stall_ref: tuple[float, float, float] | None = None   # (t, read MiB, VRAM MiB) at the last progress
+        self._util: list[float] = []                 # GPU use since then
+
+    STALL_GPU_PCT = 5.0       # mean GPU use below this over the window = idle (blips from other apps average out)
+
+    def _stalled(self, s: Sample) -> str | None:
+        """A config that doesn't fit can also hang instead of spilling: the process allocates ~10 GB of VRAM and
+        then waits in the driver, reading nothing from disk, GPU idle (llama-bench + 35B at -ncmoe 10: 140 s to
+        10+ min). A fitting run never looks like that: it reads the GGUF the whole load (21 GB in 25 s), then
+        the GPU runs at ~99 %. Progress = disk reads or VRAM change of the tree; GPU use is averaged over the
+        window because the device-wide value has blips from other programs."""
+        lim = self.cfg.stall_stop_s
+        if not lim or "proc_rss_mib" not in s:           # off, or the process doesn't exist yet
+            return None
+        t = float(s.get("t") or 0.0)
+        stuck = s.get("stuck_nvml_s")
+        if stuck is not None and stuck >= lim:
+            return (f"GPU driver not responding: NVML calls blocked for {stuck:.0f} s (a hung CUDA process holds the "
+                    "driver); a config that doesn't fit can hang like this")
+        read = float(s.get("proc_read_mib") or 0)
+        vram = float(s.get("proc_vram_mib", s.get("vram_used_mib")) or 0)
+        util = s.get("gpu_util_pct")
+        ref = self._stall_ref
+        if ref is None or abs(read - ref[1]) >= 1 or abs(vram - ref[2]) >= 16:
+            self._stall_ref = (t, read, vram)
+            self._util = []
+            return None
+        if util is not None:
+            self._util.append(float(util))
+        if t - ref[0] < lim:
+            return None
+        mean = sum(self._util) / len(self._util) if self._util else 0.0
+        if mean >= self.STALL_GPU_PCT:                    # computing: progress, start a new window
+            self._stall_ref = (t, read, vram)
+            self._util = []
+            return None
+        return (f"no progress for {t - ref[0]:.0f} s: GPU idle (mean {mean:.0f} %), no disk reads, VRAM unchanged at "
+                f"{vram:.0f} MiB ({s.get('vram_free_mib')} MiB free); a config that doesn't fit can hang like this")
 
     def shared(self, s: Sample) -> float | None:
         """The server's shared GPU memory: per process when PDH has it, else the adapter's growth."""
@@ -74,11 +126,12 @@ class Guard:
             return None
         sh = self.shared(s)
         if sh is not None and c.expected_host_mib is not None:
-            allow = max(c.spill_stop_mib, c.expected_host_mib * c.host_tolerance_pct / 100)
+            allow = max(c.spill_stop_mib, c.expected_host_mib * c.host_tolerance_pct / 100) + c.host_extra_mib
             over = sh - c.expected_host_mib
             if over > allow:
                 return (f"GPU memory spill: the server uses {sh:.0f} MiB of shared GPU memory, {over:.0f} MiB more "
-                        f"than the {c.expected_host_mib:.0f} MiB of host buffers `fit` expects")
+                        f"than the {c.expected_host_mib:.0f} MiB of host buffers `fit` expects"
+                        + (f" (+{c.host_extra_mib:.0f} MiB allowed for drafter / mmproj)" if c.host_extra_mib else ""))
         free = s.get("vram_free_mib")
         if sh is not None and free is not None:
             if free <= c.vram_full_mib:
@@ -95,7 +148,7 @@ class Guard:
         if s.get("commit_pct", 0) >= c.commit_stop_pct:
             return (f"commit charge at {s['commit_pct']:.0f} % of the limit ({s.get('commit_mib')} of "
                     f"{s.get('commit_limit_mib')} MiB; stop at {c.commit_stop_pct:.0f} %)")
-        return None
+        return self._stalled(s)
 
 
 # ---------------------------------------------------------------- summary
@@ -182,10 +235,11 @@ def summarize(samples: list[Sample], baseline: Sample | None, *, interval: float
         spill = sh_peak - (exp or 0)
     nl = stats.get("nonlocal_mib") or stats.get("shared_mib")
     bash_spill = bool(nl and (nl.delta or 0) > th.spill_mib)
-    if tripped and "spill" in tripped:
+    if tripped and ("spill" in tripped or "no progress" in tripped):
         out.append(Status("gpu", "fail", f"stopped: {tripped}"))
     elif spill is not None and exp is not None:
-        lvl = "fail" if spill > max(th.spill_mib, exp * 0.02) else "pass"
+        extra = guard.cfg.host_extra_mib if guard else 0.0
+        lvl = "fail" if spill > max(th.spill_mib, exp * 0.02) + extra else "pass"
         out.append(Status("gpu", lvl, f"server shared GPU memory peak {sh_peak:.0f} MiB, expected host buffers "
                           f"{exp:.0f} MiB → {'spill' if lvl == 'fail' else 'no spill'} ({spill:+.0f} MiB)"))
     elif bash_spill:
@@ -200,7 +254,7 @@ def summarize(samples: list[Sample], baseline: Sample | None, *, interval: float
         txt = {"fail": f"high RAM usage (>{th.ram_fail_pct:.0f} %)", "warn": f"moderate RAM usage "
                f"({th.ram_warn_pct:.0f}-{th.ram_fail_pct:.0f} %)", "pass": "normal RAM usage"}[lvl]
         out.append(Status("ram", lvl, txt))
-    if tripped and "spill" not in tripped:
+    if tripped and "spill" not in tripped and "no progress" not in tripped:
         out.append(Status("ram", "fail", f"stopped: {tripped}"))
     t = stats.get("gpu_temp_c")
     if t:
@@ -251,6 +305,9 @@ class Monitor:
         self._t0 = 0.0
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
+        self.sample_timeout = max(1.0, 2 * interval)
+        self._pending: dict[str, asyncio.Future] = {}
+        self._stuck_since: dict[str, float] = {}
 
     @property
     def errors(self) -> list[str]:
@@ -272,17 +329,35 @@ class Monitor:
             return set()
 
     async def _sample(self) -> Sample:
+        """One tick: every sampler in its own daemon thread, at most sample_timeout s. A sampler still busy from
+        an earlier tick is skipped and reported as stuck_<name>_s (seconds since it stopped answering)."""
         pids = await asyncio.to_thread(self.pids)
-        parts = await asyncio.gather(*(asyncio.to_thread(s.sample, pids) for s in self.samplers),
-                                     return_exceptions=True)
-        out: Sample = {"t": round(time.monotonic() - self._t0, 2)}
-        for p in parts:
-            if isinstance(p, dict):
-                out.update(p)
+        now = time.monotonic()
+        futs: dict[str, asyncio.Future] = {}
+        for s in self.samplers:
+            name = getattr(s, "name", type(s).__name__)
+            busy = self._pending.get(name)
+            if busy is not None and not busy.done():
+                continue
+            self._pending.pop(name, None)
+            self._stuck_since.pop(name, None)
+            futs[name] = _in_thread(s.sample, pids)
+        if futs:
+            await asyncio.wait(list(futs.values()), timeout=self.sample_timeout)
+        out: Sample = {"t": round(now - self._t0, 2)}
+        for name, f in futs.items():
+            if not f.done():
+                self._pending[name] = f
+                self._stuck_since.setdefault(name, now)
+            elif f.exception() is None and isinstance(f.result(), dict):
+                out.update(f.result())
+        for name, since in self._stuck_since.items():
+            out[f"stuck_{name}_s"] = round(time.monotonic() - since, 1)
         return out
 
     async def __aenter__(self) -> Monitor:
-        await asyncio.gather(*(asyncio.to_thread(s.open) for s in self.samplers))
+        opens = [_in_thread(s.open) for s in self.samplers]
+        await asyncio.wait(opens, timeout=10)          # nvmlInit can block while a CUDA process hangs the driver
         self._t0 = time.monotonic()
         self.baseline = await self._sample()
         # without a guard config the Guard still gives the summary its view of the server's shared memory
@@ -322,7 +397,8 @@ class Monitor:
 
     async def __aexit__(self, *exc) -> None:
         await self.stop()
-        await asyncio.gather(*(asyncio.to_thread(s.close) for s in self.samplers))
+        closes = [_in_thread(s.close) for s in self.samplers]
+        await asyncio.wait(closes, timeout=5)
         if self.csv_path and self.samples:
             self.write_csv(self.csv_path)
 
@@ -340,3 +416,52 @@ class Monitor:
                       th=self.thresholds, errors=self.errors)
         s.csv_path = str(self.csv_path) if self.csv_path else None
         return s
+
+
+def _in_thread(fn: Callable[..., Any], *args: Any) -> asyncio.Future:
+    """fn(*args) in a new daemon thread. Unlike asyncio.to_thread, a call that never returns (a driver call
+    blocked by a hung CUDA process) doesn't hold up the event loop's executor or the interpreter's exit."""
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future = loop.create_future()
+
+    def done(ok: bool, val: Any) -> None:
+        if not fut.done():
+            fut.set_result(val) if ok else fut.set_exception(val)
+
+    def run() -> None:
+        try:
+            r, ok = fn(*args), True
+        except BaseException as e:      # noqa: BLE001 - handed to the future
+            r, ok = e, False
+        try:
+            loop.call_soon_threadsafe(done, ok, r)
+        except RuntimeError:            # loop already closed: nobody waits any more
+            pass
+
+    threading.Thread(target=run, daemon=True, name=f"monitor-{getattr(fn, '__qualname__', 'call')}").start()
+    return fut
+
+
+# ---------------------------------------------------------------- from [monitor] config
+
+def guard_cfg_from(m: Any, *, enabled: bool = True, expected_host_mib: float | None = None,
+                   stall: bool = False, host_extra_mib: float = 0.0) -> GuardCfg:
+    """GuardCfg from the [monitor] table (config.MonitorCfg). stall: also stop on no progress (benchmarks)."""
+    return GuardCfg(spill_stop_mib=m.spill_stop_mib, vram_full_mib=m.vram_full_mib, ram_stop_pct=m.ram_stop_pct,
+                    commit_stop_pct=m.commit_stop_pct, expected_host_mib=expected_host_mib,
+                    host_tolerance_pct=m.host_tolerance_pct, host_extra_mib=host_extra_mib,
+                    enabled=enabled and m.guard,
+                    stall_stop_s=(m.stall_stop_s or None) if stall else None)
+
+
+def thresholds_from(m: Any) -> Thresholds:
+    return Thresholds(m.spill_stop_mib, m.ram_warn_pct, m.ram_fail_pct, m.temp_warn_c, m.temp_fail_c)
+
+
+def monitor_from(m: Any, *, guard: bool, expected_host_mib: float | None = None, csv_path: Path | None = None,
+                 on_trip: Callable[[str], Any] | None = None, on_sample: Callable[[Sample], Any] | None = None,
+                 samplers: list[Any] | None = None, stall: bool = False, host_extra_mib: float = 0.0) -> Monitor:
+    return Monitor(m.interval, guard=guard_cfg_from(m, enabled=guard, expected_host_mib=expected_host_mib,
+                                                    stall=stall, host_extra_mib=host_extra_mib),
+                   samplers=samplers, csv_path=csv_path, on_trip=on_trip, on_sample=on_sample,
+                   thresholds=thresholds_from(m))

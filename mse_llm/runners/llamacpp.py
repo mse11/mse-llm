@@ -122,7 +122,9 @@ def bench_command(cfg: Config, model: str, variant: Variant | str | None, ctx: i
     if lm:
         argv += ["-lm", lm]
     argv += list(m.bench_extra)
-    argv += ["-r", str(repetitions if repetitions is not None else d.bench_repetitions)]
+    reps = repetitions if repetitions is not None else d.bench_repetitions
+    argv += ["-r", str(reps)]
+    cmd.params = {"tg": list(tgs), "repetitions": reps}
     if output:
         argv += ["-o", output]
     cmd.argv = argv

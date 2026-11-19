@@ -13,7 +13,8 @@ def hw_fixture(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _clean_env(monkeypatch):
+def _clean_env(monkeypatch, tmp_path):
     for k in ("MSE_LLM_CONFIG", "MSE_LLM_BUILDS_ROOT", "MSE_LLM_THREADS", "MSE_LLM_BENCHY_PP"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("MSE_LLM_NO_NOTIFY", "1")      # tests never speak
+    monkeypatch.setenv("MSE_LLM_RESULTS_DIR", str(tmp_path / "results"))   # never the repo's results/

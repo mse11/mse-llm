@@ -72,7 +72,7 @@ class SectionedGroup(click.Group):
 
     SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("Inference", ("serve", "presets", "fit")),
-        ("Benchmark", ("bench", "benchy", "eval")),
+        ("Benchmark", ("bench", "benchy", "sweep", "results", "eval")),
         ("System", ("doctor", "hw", "monitor", "notify", "help")),
         ("Config", ("models", "variants")),
         ("Build", ("build",)),
@@ -907,7 +907,7 @@ def variants_expand(ctx: Ctx, patterns, from_file, include_commented, sweep) -> 
             sw = ctx.cfg.sweeps.get(sweep)
             if sw is None:
                 raise click.ClickException(f"unknown sweep {sweep!r}; known: {', '.join(ctx.cfg.sweeps) or '-'}")
-            vs += [v for v in vv.resolve(sw.variants, sw.matrix) if v.name not in {x.name for x in vs}]
+            vs += [v for v in vv.resolve([e.v for e in sw.entries()]) if v.name not in {x.name for x in vs}]
     except vv.VariantError as e:
         raise click.ClickException(str(e)) from e
     if ctx.json:
@@ -1029,46 +1029,6 @@ def _variant_options(f):
     ]):
         f = opt(f)
     return f
-
-
-@main.command("bench")
-@click.argument("model")
-@_variant_options
-@click.option("--ctx", "ctxs", type=int, multiple=True,
-              help="Prompt size -p (repeatable: one run per size, bash _wrapper_PROMPTS). Default: [models].ctx.")
-@click.option("--tg", type=int, multiple=True, help="Generated tokens -n (default: [defaults].bench_tg).")
-@click.option("-r", "--repetitions", type=int, default=None,
-              help="llama-bench -r (default: [defaults].bench_repetitions).")
-@pass_ctx
-def bench_cmd(ctx: Ctx, model, patterns, from_file, engine, dry_run, ctxs, tg, repetitions) -> None:
-    """llama-bench per variant (bash run_bench_params / run_BENCH_*)."""
-    from mse_llm.runners import bench_command
-
-    vs = _variants_for(ctx, model, patterns, from_file)
-    cmds = [bench_command(ctx.cfg, model, v, c, engine, tg=list(tg) or None, repetitions=repetitions)
-            for c in (ctxs or [None]) for v in vs]
-    _show_commands(ctx, cmds, dry_run, "M7 (bench + results store)")
-
-
-@main.command("benchy")
-@click.argument("model")
-@_variant_options
-@click.option("--ctx", "ctx_", type=int, default=None, help="Server context -c (default: [models].ctx).")
-@click.option("--pp", type=int, multiple=True,
-              help="Prompt sizes (default: the context when pp_sync_ctx, else [defaults.benchy].pp).")
-@click.option("--tg", type=int, multiple=True, help="Generated tokens (default: [defaults].bench_tg).")
-@click.option("--depth", type=int, multiple=True, help="Context depths (default: [defaults.benchy].depth).")
-@click.option("--runs", type=int, default=None)
-@pass_ctx
-def benchy_cmd(ctx: Ctx, model, patterns, from_file, engine, dry_run, ctx_, pp, tg, depth, runs) -> None:
-    """llama-benchy against a background llama-server, per variant
-    (bash run_benchy_params_with_server / run_BENCHY_WITH_SERVER_*)."""
-    from mse_llm.runners import benchy_command
-
-    vs = _variants_for(ctx, model, patterns, from_file)
-    cmds = [benchy_command(ctx.cfg, model, v, ctx_, engine, pp=list(pp) or None, tg=list(tg) or None,
-                           depth=list(depth) or None, runs=runs) for v in vs]
-    _show_commands(ctx, cmds, dry_run, "M7 (benchy + results store)")
 
 
 @main.command("eval")
@@ -1238,6 +1198,7 @@ def _print_fit(rep) -> None:
     console.print(f"[dim]{legend}[/]")
 
 
+from mse_llm import cli_bench as _cli_bench  # noqa: E402,F401  (registers bench, benchy, sweep, results)
 from mse_llm import cli_monitor as _cli_monitor  # noqa: E402,F401  (registers monitor + notify)
 from mse_llm import cli_serve as _cli_serve  # noqa: E402,F401  (registers serve + presets)
 

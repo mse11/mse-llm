@@ -184,9 +184,7 @@ def test_cli_serve_dry_run_json():
     assert cmd["argv"][cmd["argv"].index("--fit") + 1] == "on" and cmd["errors"] == []
 
 
-def test_cli_bench_needs_dry_run_and_rejects_spec():
-    r = _cli(["bench", "omnicoder_9b", "-v", "fa_Kq8_Vq8"])
-    assert r.exit_code != 0 and "M7" in r.output
+def test_cli_bench_rejects_spec():
     r = _cli(["bench", "gemma_4_26B_A4b_QAT_UD_Q4_K_XL", "-v", "fa_moe21_sd4mtp", "--dry-run"])
     assert r.exit_code == 1 and "llama-bench can't run sd" in r.output
 

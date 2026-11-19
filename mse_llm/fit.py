@@ -220,6 +220,13 @@ class FitRow:
         return sum(p.host_mib for p in self.parts)
 
     @property
+    def host_unsure_mib(self) -> float:
+        """Drafter / mmproj buffers: fit knows their size but not whether llama.cpp puts them in VRAM or in pinned
+        host memory (which shows up as shared GPU memory). Measured: gemma QAT + its 240 MiB MTP drafter added
+        +360 MiB of shared memory beyond the main model's host part."""
+        return sum(p.gpu_mib or 0 for p in self.parts if p.name.startswith(("draft", "mmproj")))
+
+    @property
     def left_mib(self) -> float | None:
         return None if self.free_mib is None or self.error else self.free_mib - self.gpu_mib
 

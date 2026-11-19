@@ -308,6 +308,7 @@ def serve_cmd(ctx: Ctx, model, patterns, spec, preset, file_, ctx_, port, output
     _, eng, _, _ = _engine(ctx, engine)
     the_port = port or eng.port
     expected_host = None
+    host_extra = 0.0
     if let_fit and not no_fit_check and cmd.ctx:
         with console.status("llama-fit-params --fit on …"):
             path = fit_model if preset else ctx.cfg.model(fit_model)[1].path
@@ -325,12 +326,13 @@ def serve_cmd(ctx: Ctx, model, patterns, spec, preset, file_, ctx_, port, output
         _print_fit_check(chk)
         if chk.row is not None and not chk.row.error:
             expected_host = chk.row.host_mib      # pinned host buffers: shared GPU memory that is not a spill
+            host_extra = chk.row.host_unsure_mib
         if chk.bad:
             _need_yes(yes, f"fit check says {chk.verdict}. Start anyway?")
     _prestart_checks(the_port)
     log = sv.servers_dir() / f"serve-{the_port}.log"
     mon = _MonOpts(not no_monitor and ctx.cfg.defaults.monitor, not no_guard, expected_host,
-                   mem_cap if mem_cap is not None else ctx.cfg.monitor.job_memory_cap_mib)
+                   mem_cap if mem_cap is not None else ctx.cfg.monitor.job_memory_cap_mib, host_extra)
     asyncio_run(_serve(ctx, cmd, eng, the_port, log, _filter(ctx, output), mon))
 
 
@@ -347,6 +349,7 @@ class _MonOpts:
     guard: bool = True
     expected_host_mib: float | None = None
     mem_cap_mib: int | None = None
+    host_extra_mib: float = 0.0
 
 
 async def _serve(ctx: Ctx, cmd, eng, port: int, log: Path, filt, mon: _MonOpts) -> None:
@@ -383,7 +386,8 @@ async def run_server(ctx: Ctx, h, log: Path, mon: _MonOpts, on_ready, *, what: s
     m = None
     if mon.monitor:
         m = make_monitor(ctx, guard=mon.guard, expected_host_mib=mon.expected_host_mib,
-                         csv_path=log.with_name(log.stem + ".monitor.csv"), on_trip=trip)
+                         host_extra_mib=mon.host_extra_mib, csv_path=log.with_name(log.stem + ".monitor.csv"),
+                         on_trip=trip)
     note = "" if m is None else (f"; monitor every {ctx.cfg.monitor.interval:g} s, guard "
                                  + ("on" if mon.guard and ctx.cfg.monitor.guard else "off"))
     console.print(f"[dim]log: {escape(str(log))}  ({hint}){note}[/]")

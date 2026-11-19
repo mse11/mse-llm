@@ -30,6 +30,7 @@ class Command:
     errors: list[str] = field(default_factory=list)    # flag validation against the help snapshot
     server: Command | None = None              # background server a client command runs against
     snapshot: str | None = None                # help snapshot the flags were checked against
+    params: dict[str, Any] = field(default_factory=dict)   # resolved run parameters (tg, pp, depth, ...)
 
     @property
     def ok(self) -> bool:
@@ -42,7 +43,7 @@ class Command:
         d: dict[str, Any] = {
             "tool": self.tool, "label": self.label, "model": self.model, "variant": self.variant,
             "ctx": self.ctx, "argv": self.argv, "env": self.env, "warnings": self.warnings,
-            "errors": self.errors, "snapshot": self.snapshot,
+            "errors": self.errors, "snapshot": self.snapshot, "params": self.params,
         }
         if self.server is not None:
             d["server"] = self.server.as_dict()

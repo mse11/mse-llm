@@ -11,8 +11,8 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | F1 | `run_HELP_server/bench__*` | `mse-llm help server\|bench` (+ `benchy`, `eval`), `doctor flags` | output identical to `--help` | ✓ M2: real snapshots `a49db739f` + `ffc87c3a7` stored; `doctor flags` diff + audit checked against them |
 | F2 | `MODELS`, `DRAFTER_MODELS`, `MODELS_BENCH_EXTRA`, `MODELS_SERVE_EXTRA` | `[models.*]` in config | every model + extra present | ✓ M3: all 7 models under their bash keys (drafter, serve_extra, ctx, default_serve/_spec); the golden test compares paths + extras |
 | F3 | `EXTRAS` matrix + `EXTRAS_get_flags_normalized/_replaced` | `variants.py` codec | golden test: every generated key decodes to the same flags | ✓ M3: all 1249 `EXTRAS` keys + placeholder replacement for every model (`tests/test_cmd_build.py`); turbo keys raise "dropped" |
-| F4 | `run_bench_params*`, `_wrapper_EXTRAS`, `_wrapper_PROMPTS` | `mse-llm bench` | same argv in `--dry-run` (§0.1 bugs fixed) | ◐ M3: `bench --dry-run` argv = bash (differences below); `-v` list / repeated `--ctx` = the two wrappers; running in M7 |
-| F5 | `run_benchy_params_with_server*` | `mse-llm benchy` | same argv, `--pp` list passed once | ◐ M3: `benchy --dry-run` server + client argv = bash, lists after one flag; M5: `ServerHandle` for its server; running in M7 |
+| F4 | `run_bench_params*`, `_wrapper_EXTRAS`, `_wrapper_PROMPTS` | `mse-llm bench` | same argv in `--dry-run` (§0.1 bugs fixed) | ✓ M3: `bench --dry-run` argv = bash (differences below); `-v` list / repeated `--ctx` = the two wrappers. M7: runs under the monitor + guard, fit-checked first, `-o jsonl` parsed, one RunResult per run in `results/` |
+| F5 | `run_benchy_params_with_server*` | `mse-llm benchy` | same argv, `--pp` list passed once | ✓ M3: `benchy --dry-run` server + client argv = bash, lists after one flag; M5: `ServerHandle` for its server. M7: runs (server, then llama-benchy with `--format json --save-result`), parsed into the results store |
 | F6 | `run_serve_params_on_background`, `server_wait_for_ready`, `server_stop_windows` | `ServerHandle` | 50× start/stop, no orphans | ✓ M5: `ServerHandle` (port check, spawn in its own process group + kill-on-close Job Object, `/health` poll with fail-fast, graceful CTRL_BREAK, tree kill, port verified free). 50× with the fake server (2 children each) and 50× with the real router + 10× real model load/chat, no `llama-server` left |
 | F7 | `run_serve_params` + `_FILTER`, output modes | `mse-llm serve --output` | same filtered lines | ✓ M5: `serve` runs (foreground, Ctrl+C stops the tree), `--output filter` = the `run_serve_params_FILTER` regexes; + fit pre-check |
 | F8 | `run_presets_serve`, `run_PRESETS_serve`, `run_PRESETS_dump`, `run_presets_dump` | `mse-llm presets …` | existing INI serves all 5 models | ✓ M5: `presets serve` (foreground / `--background`, `--load`), `validate`, `fix`, `list`, `dump`, `generate`, `status`, `load`/`unload`, `watch`, `stop`; all 5 models listed, two models switched through one endpoint; the generated INI validates and maps back to every `default_serve` |
@@ -23,7 +23,7 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | F13 | `EXEC_user_notification_WIN_T2S` | `notify.py` | voice message at end of run | ✓ M6: SAPI through COM (no powershell); `serve` / `presets serve` / `monitor -- CMD` speak at the end; `--no-notify`, `mse-llm notify TEXT` |
 | F14 | `EXEC_cmd_with_output_mode` (all/filter/none) | `--output` | — | ✓ M5: `--output all\|filter\|none`, `[defaults].output`, `[defaults].output_filter` (default: the bash list) |
 | F15 | `MSE_*` knobs | config fields / `MSE_LLM_*` env / `--dry-run` | each knob mapped or dropped | ◐ M0: see the knob table below |
-| — | `run_BENCH_*`, `run_BENCHY_WITH_SERVER_*`, `run_SERVER_*`, `run_INSPECT_*` group functions (+ commented entries, "SWEETSPOT", "PC freeze" notes) | `[sweeps.*]` + `annotations` | one entry per function, notes kept | ☐ M7 |
+| — | `run_BENCH_*`, `run_BENCHY_WITH_SERVER_*`, `run_SERVER_*`, `run_INSPECT_*` group functions (+ commented entries, "SWEETSPOT", "PC freeze" notes) | `[sweeps.*]` + `annotations` | one entry per function, notes kept | ◐ M7: all 9 `run_BENCH_*` / `run_BENCHY_WITH_SERVER_*` / `run_INSPECT_*` functions are `[sweeps.*]` (`bash = "…"` names the function), all 161 `extras_list` entries in order, comments as `note`, commented-out = `status = "off"`, "PC freeze" = `status = "skip"`, tags sweetspot / freeze / sporadic-freeze / skipped; `sweep run` runs bench/benchy sweeps (the inspect one in M12). `run_SERVER_*`: `default_serve(_spec)` since M3 |
 | — | Model notes in comments (HF URLs, sizes, capabilities) | `[models.*].url`, `notes` | nothing lost | ✓ M3: URLs, sizes, capabilities and the per-model bench notes (SWEETSPOT / PC freeze) in `config.example.toml`; per-entry annotations go to `[sweeps.*]` in M7 |
 | — | turbo2/3/4 cache variants (`*_Kt*`, `*_Vt*`) | — | — | ✗ dropped: not supported by upstream llama.cpp (approved 2026-11-18) |
 
@@ -176,3 +176,33 @@ Every built llama-server / llama-bench argv is also checked against the engine's
     `--mem-cap 2000`, OmniCoder 9B failed with "cudaMalloc failed: out of memory" for its 5 GB CUDA buffer. A cap
     must cover VRAM + host buffers + RAM; it is off by default.
   * Not in M6: Parquet output (CSV only, no pandas dependency); thermal gating between runs (§9 item 2, M15).
+* **M7 (2026-11-19):** `results.py` (RunResult, store: `results/index.jsonl`, `runs/YYYY-MM/<run_id>.json`,
+  `builds/`, `hw/`, git-ignored `raw/<run_id>/`), `parsers/` (llama-bench jsonl, benchy json), `bench.py` (jobs,
+  sweeps, resume), `cli_bench.py`: `bench`, `benchy`, `sweep list|show|run`, `results list|show`. The old
+  dry-run-only `bench` / `benchy` commands in `cli.py` are replaced.
+  * **Sweeps from the script, as data:** all 9 group functions are `[sweeps.*]` in `config.example.toml`,
+    generated from the `extras_list` arrays (161 entries, a test checks the count against the script):
+    commented-out entries `status = "off"`, "PC freeze" ones `status = "skip"`, every comment kept as `note`.
+  * **Acceptance runs, real (build ffc87c3a7):** `sweep run omnicoder_9b_bench` (4 variants, pp 131072:
+    2259-2660 t/s PP, 53-56 t/s TG), `sweep run Qwen36_35B_A3B_UD_Q4_K_M_MTP_bench` (the 2 active `moe41`
+    entries, pp 65536: 727 / 745 t/s PP, 29.1 / 33.5 t/s TG), `sweep run gemma_4_26B_A4b_QAT_UD_Q4_K_XL_benchy
+    --include-off --match "*moe21_sd4mtp"` (benchy, pp 65536: 1535 t/s PP, 25.4 t/s TG); then `--resume` skipped
+    both Qwen entries ("ok in <run_id>") and `--only-failed` re-ran exactly the aborted gemma run. 8 KB per run JSON.
+  * **A no-fit config can hang instead of spilling** (new guard rule D, §5): llama-bench, Qwen3.6-35B `moe10`,
+    ctx 4096, forced past the fit check, allocated ~10 GB VRAM and then sat at 0 % GPU without disk reads for
+    140 s (then spilled, rule A stopped it) and in another run for 10+ minutes, where it also blocked NVML for
+    other processes and ignored the kill for ~3 minutes. Rule D: no disk reads, no VRAM change and mean GPU
+    use < 5 % for 90 s (benchmarks only). Replayed on the recorded samples it stops both no-fit runs at ~97 s and
+    never the fitting `moe41` run (which reads the GGUF the whole load, then runs the GPU at 99 %).
+  * Monitor samplers now run in daemon threads with a time limit, so a blocked NVML call no longer stops the
+    monitor (before: the guard went blind) or mse-llm's exit. After a guard stop a job waits at most 30 s for
+    the process and moves on.
+  * **Rule B false alarm fixed:** gemma QAT `moe21_sd4mtp` (your SD-on sweet spot) was stopped by rule B: its
+    240 MiB MTP drafter added +360 MiB of shared memory that fit's host part (main model only) doesn't include,
+    with 4 GB of VRAM still free. Rule B now allows the drafter / mmproj sizes on top (`serve` too).
+  * Every job is fit-checked first; without `--force` a no-fit variant is a `skipped` result in ~1 s with the
+    `-ncmoe` suggestion (the moe10 case above: "needs -ncmoe ≥ 24").
+  * The tests now always write to a temp `MSE_LLM_RESULTS_DIR`; an M3 test that expected `bench` without
+    `--dry-run` to refuse had started a real 131072-token llama-bench.
+  * Not in M7: `results compare` / `export --csv` (M8 with the reports); eval sweeps (M12).
+  * `results/` is git-ignored for now (your decision, 2026-11-19); the store itself is unchanged.

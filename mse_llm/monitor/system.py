@@ -51,7 +51,7 @@ class SystemSampler:
             except Exception:
                 pass
         if pids:
-            rss = priv = 0
+            rss = priv = read = 0
             for pid in pids:
                 p = self._procs.get(pid)
                 if p is None:
@@ -63,8 +63,10 @@ class SystemSampler:
                     mi = p.memory_info()
                     rss += mi.rss
                     priv += getattr(mi, "private", 0) or getattr(mi, "vms", 0)
-                except psutil.Error:
+                    read += p.io_counters().read_bytes
+                except (psutil.Error, AttributeError):
                     self._procs.pop(pid, None)
             out["proc_rss_mib"] = rss // MIB
             out["proc_private_mib"] = priv // MIB
+            out["proc_read_mib"] = read // MIB         # disk reads of the tree (model loading = progress)
         return out

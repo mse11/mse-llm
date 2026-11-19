@@ -107,6 +107,7 @@ class MonitorCfg(_Model):
     host_tolerance_pct: float = 2.0        # allowed error of fit's host-buffer size (measured: 0.5 %)
     ram_stop_pct: float = 95.0
     commit_stop_pct: float = 95.0
+    stall_stop_s: float = 90.0             # bench/benchy: stop after this long without progress (0 = off)
     job_memory_cap_mib: int | None = None  # Windows Job Object cap on the server tree's committed memory
     ram_warn_pct: float = 60.0             # bash status thresholds
     ram_fail_pct: float = 80.0
@@ -114,14 +115,56 @@ class MonitorCfg(_Model):
     temp_fail_c: float = 85.0
 
 
+class SweepEntry(_Model):
+    """One line of a bash extras_list, as data: `{ v = "fa_Kq8_Vq4_default_moe34", status = "off", note = "…" }`.
+
+    status: "on" runs; "off" was commented out in bash (runs with `sweep run --include-off`); "skip" is never
+    started without --force (bash "PC freeze" / "SKIPPED" notes).
+    tag: sweetspot | freeze | sporadic-freeze | skipped."""
+    v: str
+    status: Literal["on", "off", "skip"] = "on"
+    note: str = ""
+    tag: str | None = None
+
+
 class SweepCfg(_Model):
     model: str
     engine: str = "cuda_flash"
     tool: Literal["bench", "benchy", "eval"] = "bench"
     ctx: int | None = None
-    variants: list[str] = Field(default_factory=list)
+    variants: list[str | SweepEntry] = Field(default_factory=list)
     matrix: dict[str, list[Any]] | None = None
-    annotations: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    annotations: dict[str, dict[str, Any]] = Field(default_factory=dict)   # name -> {status, note, tag}
+    # bench: -p sizes (bash _wrapper_PROMPTS) and -n; benchy: pp / depth / runs / concurrency
+    prompts: list[int] = Field(default_factory=list)
+    tg: list[int] = Field(default_factory=list)
+    repetitions: int | None = None
+    pp: list[int] = Field(default_factory=list)
+    depth: list[int] = Field(default_factory=list)
+    runs: int | None = None
+    concurrency: list[int] = Field(default_factory=list)
+    task: str | None = None                 # eval: inspect task (M12)
+    bash: str | None = None                 # the bash function this sweep replaces
+    notes: str | None = None
+
+    def entries(self) -> list[SweepEntry]:
+        """Every variant in order (brace patterns expanded, matrix appended), annotations applied."""
+        from mse_llm import variants as vv
+
+        out: list[SweepEntry] = []
+        seen: set[str] = set()
+        raw = [e if isinstance(e, SweepEntry) else SweepEntry(v=e) for e in self.variants]
+        raw += [SweepEntry(v=v.name) for v in (vv.expand_matrix(self.matrix) if self.matrix else [])]
+        for e in raw:
+            for n in vv.expand(e.v):
+                name = vv.canonical(n)
+                if name in seen:
+                    continue
+                seen.add(name)
+                ann = self.annotations.get(name) or self.annotations.get(n) or {}
+                out.append(SweepEntry(v=name, status=ann.get("status", e.status), note=ann.get("note", e.note),
+                                      tag=ann.get("tag", e.tag)))
+        return out
 
 
 class HwChecksCfg(_Model):

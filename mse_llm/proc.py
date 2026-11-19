@@ -415,9 +415,22 @@ class Spawned:
                 await asyncio.sleep(0.2)
             return self.proc.returncode
         rc = await self.proc.wait()
-        if self._reader:
-            await self._reader
+        await self._join_reader()
         return rc
+
+    async def _join_reader(self, timeout: float | None = None) -> None:
+        """Wait for the output reader. One that stop() cancelled (the process didn't close its pipe in time)
+        is not an error: its CancelledError must not look like our own cancellation (Ctrl+C)."""
+        r = self._reader
+        if r is None:
+            return
+        try:
+            await (asyncio.wait_for(asyncio.shield(r), timeout) if timeout is not None else asyncio.shield(r))
+        except TimeoutError:
+            r.cancel()
+        except asyncio.CancelledError:
+            if not r.cancelled():
+                raise
 
     async def stop(self, *, grace: float = 5.0, port: int | None = None) -> StopReport:
         if self.proc is None:
@@ -429,11 +442,7 @@ class Spawned:
                 await asyncio.wait_for(self.proc.wait(), 5)
             except TimeoutError:
                 pass
-            if self._reader:
-                try:
-                    await asyncio.wait_for(self._reader, 5)
-                except TimeoutError:
-                    self._reader.cancel()
+            await self._join_reader(5)
         if self.job is not None:
             try:
                 import win32api

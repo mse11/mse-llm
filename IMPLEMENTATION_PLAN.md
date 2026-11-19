@@ -26,7 +26,8 @@ What has been decided, checked or changed so far. The sections below have the de
   outside this repo is used (§0.4).
 * **Nothing outside this repo is used.** `C:\Users\micha\MSE\GIT\_MSE_doc\AI\MODELS\app_llamacpp\`
   is being removed; the script's references to it were deleted.
-* **`results/` lives in this repo and is tracked in git.** The tool only writes files. What gets
+* **`results/` lives in this repo; for now it is not stored in git** (`/results/` in `.gitignore`, decided
+  2026-11-19 after M7; the plan below was "tracked in git"). The tool only writes files. What gets
   committed, and how, is decided later by you with plain git (no `results commit/status/prune`
   commands). Large raw data and runtime state are git-ignored (§8).
 * **Preview before anything heavy runs:** `build plan`, and `--dry-run` on `build run`, `bench`,
@@ -112,6 +113,19 @@ What has been decided, checked or changed so far. The sections below have the de
 * A Windows Job Object memory cap also counts VRAM allocations (WDDM), so it must cover VRAM + host + RAM.
 * Graceful stop on Windows is CTRL_BREAK to the server's own process group; attached servers sit in a
   kill-on-close Job Object (no orphans even if mse-llm is killed); background routers are stopped by PID.
+
+**Found while implementing M7 (2026-11-19)** (details in `docs/PARITY.md`, milestone log)
+* **A no-fit config can hang instead of spilling.** llama-bench with Qwen3.6-35B at `-ncmoe 10` (ctx 4096,
+  forced past the fit check) sat at 0 % GPU with 10 GB VRAM, no disk reads and no shared-memory growth for
+  140 s in one run (then spilled) and 10+ minutes in another, so guard rules A-C never fired. New rule D
+  (benchmarks only): no progress for 90 s (§5). While it hangs it can block NVML for every process (the
+  monitor's samplers now have time limits) and ignore the kill for minutes.
+* Guard rule B (shared memory over fit's host part) needs an allowance for a drafter / mmproj: their buffers can
+  land in pinned host memory, which fit doesn't place (gemma QAT + 240 MiB MTP drafter: +360 MiB, a false stop).
+* The fit pre-check is what keeps sweeps safe: without `--force` such a variant is recorded as `skipped` in
+  ~1 s, with the `-ncmoe` that would fit.
+* The bash sweeps are data now: `[sweeps.*]` in the config, generated from the script's `extras_list` arrays,
+  commented-out entries as `status = "off"`, "PC freeze" ones as `status = "skip"` (only with `--force`).
 
 **Later**
 * Strata as a second engine (managed mode, `/v1/models` probe, API key, `/metrics`), compared with
@@ -1448,7 +1462,9 @@ configs to skip without running them. That replaces "try everything and see what
 ## 5. Monitoring (async, in-process)
 
 `async with Monitor(interval=0.5, pid=server_pid) as mon:` runs samplers concurrently in the same
-loop (blocking NVML/PDH calls go through `asyncio.to_thread`).
+loop. As built (M7): each sampler runs in its own daemon thread with a time limit (2 × interval). A
+hung CUDA process can block every NVML call on the machine; the monitor then keeps sampling PDH and psutil,
+reports `stuck_nvml_s`, and the blocked thread never keeps mse-llm from exiting.
 
 | Metric | Source (no shell-outs) |
 |---|---|
@@ -1480,6 +1496,16 @@ otherwise explains the bash rule instead of calling it a spill.
   100 MiB after that, or
 * **B.** the server's shared memory exceeds the host buffers `fit` expects by more than max(100 MiB, 2 %), or
 * **C.** system RAM > 95 % or the commit charge > 95 % of the limit.
+* **D.** (benchmarks only, M7) **no progress** for `stall_stop_s` (90 s): the process tree reads nothing from
+  disk, its VRAM doesn't change, and the GPU's mean use over the window is < 5 % (single blips from other
+  programs average out); or NVML blocked that long. Found in M7: a config that doesn't fit can sit **quiet**
+  instead of spilling right away: llama-bench, Qwen3.6-35B `-ncmoe 10`, ctx 4096 allocated ~10 GB VRAM, read
+  only 23 MiB of the GGUF, GPU at 0 %, for 140 s (then it spilled, rule A) and in another run for 10+ minutes.
+  A fitting run never looks like that: `-ncmoe 41` read the GGUF the whole load (21 GB in 25 s), then the GPU
+  ran at 99 %. Replayed on the recorded samples, D stops both no-fit runs at ~97 s and never the fitting one.
+  `serve` doesn't use D: a server waiting for requests looks the same. A process stuck in the driver can also
+  ignore the kill for minutes (seen once: ~3 min), so after a guard stop a job waits at most 30 s and moves on
+  (the process ends when the driver lets go; it is in the kill-on-close Job Object).
 Checked in M6: the `moe10` over-commit was stopped 8 s after start with 586 MiB spilled; without the
 guard it reached 9 GB of shared memory in 60 s. A sweep can also use `llama-fit-params` to predict OOM
 and skip known-bad configs (§4.6). Thresholds live in `[monitor]`.
@@ -1717,7 +1743,8 @@ fit_adjustments}, monitor {peaks, deltas, status}, quality {mean/median/p99/max 
 ppl_ratio, reference id} (§4.5), spec {type, n_max, drafted, accepted, acceptance_rate,
 mean_accept_len, accepted_per_pos[]} (§4.5), status (ok|failed|aborted|skipped), log paths`.
 
-* Store: `results/` **in this repo, tracked in git**, so benchmark history travels with the code
+* Store: `results/` **in this repo**. **For now not stored in git** (`/results/` git-ignored, 2026-11-19); the
+  original idea below is to track the small JSON files later, so benchmark history travels with the code
   and every number can be traced to a commit. One JSON per run + `results/index.jsonl` (SQLite
   later if needed, generated from the JSON and not tracked). What is tracked and what stays local:
 
@@ -1740,6 +1767,20 @@ mean_accept_len, accepted_per_pos[]} (§4.5), status (ok|failed|aborted|skipped)
   `sweep run --resume` skips variants that already have an `ok` result for the same build.
 * Parsing: `llama-bench -o jsonl` and `benchy --format json --save-result`. No more regex on
   markdown tables. The legacy regex parser stays only to import old logs.
+* As built (M7): `mse_llm/results.py` (RunResult, store), `mse_llm/parsers/` (llama_bench, benchy),
+  `mse_llm/bench.py` (jobs, sweeps, resume), `mse_llm/cli_bench.py` (`bench`, `benchy`, `sweep`, `results`).
+  One RunResult per job: llama-bench's pp and tg lines (or benchy's pp+tg per prompt size / depth) are
+  `tests[]`, and `metrics` holds the headline numbers of the bash chart (PP of the largest prompt, TG at
+  depth 0). Also stored: `key` (tool + model + variant + ctx + params; `--resume` matches it with the build id),
+  `fit` (verdict, GPU / host MiB, free, left), `startup` (llama-bench's effective settings, or the server's
+  n_ctx / offload / ready time), `monitor` (the summary, CSV path), `build` (id = commit + hash of the
+  manifest, copied to `results/builds/`), `hw` (hash, copied to `results/hw/`), `model_identity`, argv, logs.
+  Measured size: 8 KB per run. `MSE_LLM_RESULTS_DIR` moves the whole tree (the tests use it, so they never
+  write into the repo's `results/`).
+* Every job is fit-checked first: a no-fit variant becomes a `skipped` result with the reason and the
+  `-ncmoe` suggestion, without starting the tool (`--force` starts it anyway).
+* `results list` / `results show` (with the reproduce command, §9 item 1) are in M7; `results compare` and
+  `results export --csv` come with the reports (M8).
 * Charts: port the 5-axis grouped bar chart as is (parity), then add:
   * Pareto chart: TG t/s vs peak VRAM (or vs shared-mem spill), one point per variant.
   * Heatmap: `n-cpu-moe` × `ub` → TG (or PP).
@@ -1852,7 +1893,7 @@ come first:
 | **M4** | `mse-llm fit` (§4.6): GGUF/model + variants (`-v`, brace patterns, pasted bash arrays with comments) + `--ctx` → `llama-fit-params --fit-print` per variant, per-part breakdown with source (measured / estimated / NOT COUNTED) for drafter + mmproj, verdicts `fits` / `fits~` / `UNSURE`, `--strict`, `--suggest` | Pasting the Qwen28-REAP `extras_list` reproduces the §4.6 table; an `sdNmtp` variant without a configured drafter shows `UNSURE`; `--suggest` proposes the lower `-ncmoe` |
 | **M5** | `proc.py` + `ServerHandle` (async spawn, readiness, tree kill, port-free check); `serve` (+ `--preset`, `--fit on` with the `fit` pre-check warning, §0.3); `presets *` (§4.3) | Server starts/stops cleanly 50× in a loop on Windows with no orphan processes; `serve` warns before a bad fit and shows what `--fit` would change; `presets serve` + `presets load` switch between two models through one endpoint |
 | **M6** | `monitor/` (NVML, PDH, psutil) + memory guard + **freeze prevention** (§9 item 7: live spill / RAM / commit stop with the guard rules of §5, optional Job Object cap) + notify | Peaks match the bash monitor within tolerance; a forced over-commit run is stopped before the laptop stalls |
-| **M7** | `bench` (llama-bench jsonl) + `benchy` (json) + results store in `results/` + `sweep run --resume` | Old sweeps from the script run from TOML; results JSON written |
+| **M7** | `bench` (llama-bench jsonl) + `benchy` (json) + results store in `results/` + `sweep run --resume` | Old sweeps from the script run from TOML; results JSON written. As built: all 9 bash group functions are `[sweeps.*]` (161 entries, comments as status / note / tag), `sweep list/show/run`, `results list/show`, fit pre-check per job, guard rule D (hang) |
 | **M8** | `report chart` (parity 5-axis + legacy log import), `report table`, `report prompt` | Chart from new results matches the old chart for the same data; old `.txt` logs still chart |
 | **M9** | §4.6 `predict` (GGUF expert sizes, `llama-fit-params` grid, roofline TG/PP, calibration from M7 runs) + §9 item 6 `sweep search` (safe side first, stops at the first spill, winner one step back) | After calibration, predicted TG/PP are within ~15 % of measured for 2 models; `sweep search` finds a sweet spot without a single run that spills |
 | **M10** | §4.5: `quality kld-ref/kld/floor` (llama-perplexity, size preview, wikitext-2 + code corpus, reference fallbacks); `--metrics` on bench servers + `/metrics` delta scraping, spec log parsing, `RunResult.quality` / `.spec` | KLD table for 3 K/V variants of one model, with noise floor; a `sd{2,3,4}mtp` benchy sweep shows acceptance rate + per-position acceptance next to TG |
@@ -1924,7 +1965,8 @@ need your explicit OK before the script is deleted.
 1. ~~turbo* cache types~~ **Decided: dropped** (no fork profile; parity table "dropped + reason").
 2. ~~Results location~~ **Decided:** results live inside this repo under `results/`. Nothing is
    read from or written to `_MSE_doc\AI\MODELS\app_llamacpp\` (that folder is being removed).
-   `results/` is **tracked in git**. Which files get committed, and how, is your decision later;
+   `results/` was planned as **tracked in git**; **update 2026-11-19: not stored in git for now** (git-ignored).
+   Which files get committed later, and how, is your decision;
    the tool only writes them (§8).
 3. ~~Default `--fit` for serve~~ **Decided:** `serve` uses `--fit on`, and the `fit`
    pre-check **warns** about a bad fit and shows what `--fit` would change before starting.

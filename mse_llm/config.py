@@ -42,6 +42,7 @@ class Defaults(_Model):
     notify: bool = True
     monitor: bool = True
     output: Literal["all", "filter", "none"] = "filter"
+    output_filter: list[str] | None = None   # regexes for --output filter; None = bash run_serve_params_FILTER
     benchy: BenchyDefaults = Field(default_factory=BenchyDefaults)
 
 
@@ -86,6 +87,11 @@ class PresetsCfg(_Model):
     # relative to the repo root (bash MSE_PRESETS_SERVE_FILE); M13 switches to config/presets.ini
     file: str = "llama_cpp_presets.ini"
     engine: str | None = None
+    port: int | None = None                    # default: the engine's port
+    models_max: int | None = None              # --models-max (router default 4)
+    memory_margin_mib: int | None = None       # --models-memory-margin: LRU unload to keep this much VRAM free
+    autoload: bool = True                      # False -> --no-models-autoload
+    load_on_start: list[str] = Field(default_factory=list)   # preset names loaded right after start
 
     def path(self) -> Path:
         p = Path(self.file)

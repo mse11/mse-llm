@@ -47,3 +47,99 @@ class Command:
         if self.server is not None:
             d["server"] = self.server.as_dict()
         return d
+
+
+# ------------------------------------------------- ServerHandle (§3.3, bash run_serve_params_on_background)
+
+class ServerError(RuntimeError):
+    def __init__(self, message: str, log_tail: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.log_tail = log_tail or []
+
+
+@dataclass
+class Endpoint:
+    base_url: str              # http://localhost:8033/v1 (what clients use)
+    port: int
+    pid: int
+    ready_s: float = 0.0
+
+    @property
+    def root(self) -> str:
+        from mse_llm.health import root_of
+
+        return root_of(self.base_url)
+
+
+class ServerHandle:
+    """A server process as an async context manager:
+
+        async with ServerHandle(argv, port=8033) as ep:   # port check, spawn, wait for /health
+            ...                                            # use ep.base_url
+        # on exit: graceful stop, kill of the whole process tree, port verified free
+
+    `detached=True` starts a server that outlives mse-llm (`presets serve --background`); leave the
+    context with `keep=True` set (or call `start()` without the context manager) to keep it running."""
+
+    def __init__(self, argv: list[str], *, port: int, client_host: str = "localhost", health_path: str = "/health",
+                 ready_timeout: float = 120, log_path=None, sink=None, detached: bool = False,
+                 env: dict[str, str] | None = None, grace: float = 5.0, progress=None) -> None:
+        from mse_llm.proc import Spawned
+
+        self.port = port
+        host = "localhost" if client_host in ("0.0.0.0", "::", "") else client_host
+        self.base_url = f"http://{host}:{port}/v1"
+        self.health_path = health_path
+        self.ready_timeout = ready_timeout
+        self.grace = grace
+        self.progress = progress
+        self.keep = False
+        self.proc = Spawned(argv, log_path=log_path, sink=sink, detached=detached, env=env)
+        self.endpoint: Endpoint | None = None
+        self.stop_report = None
+
+    @property
+    def pid(self) -> int:
+        return self.proc.pid
+
+    async def start(self) -> Endpoint:
+        import asyncio
+
+        from mse_llm import proc as pr
+        from mse_llm.health import NotReady, root_of, wait_ready
+
+        if await asyncio.to_thread(pr.port_in_use, self.port):
+            raise ServerError(pr.describe_port(self.port) + "; stop it first (`mse-llm hw processes --stop`, "
+                              "`mse-llm presets stop`) or pick another --port")
+        try:
+            await self.proc.start()
+        except pr.ProcError as e:
+            raise ServerError(str(e)) from e
+        try:
+            ready = await wait_ready(root_of(self.base_url) + self.health_path, self.ready_timeout,
+                                     exited=lambda: self.proc.returncode, progress=self.progress)
+        except NotReady as e:
+            tail = self.proc.tail_log()
+            await self.stop()
+            raise ServerError(str(e), tail) from None
+        except BaseException:
+            await self.stop()
+            raise
+        self.endpoint = Endpoint(self.base_url, self.port, self.pid, ready)
+        return self.endpoint
+
+    async def stop(self):
+        if self.proc.proc is None:
+            return None
+        self.stop_report = await self.proc.stop(grace=self.grace, port=self.port)
+        return self.stop_report
+
+    async def wait(self) -> int:
+        return await self.proc.wait()
+
+    async def __aenter__(self) -> Endpoint:
+        return await self.start()
+
+    async def __aexit__(self, *exc) -> None:
+        if not self.keep:
+            await self.stop()

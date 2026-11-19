@@ -12,16 +12,16 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | F2 | `MODELS`, `DRAFTER_MODELS`, `MODELS_BENCH_EXTRA`, `MODELS_SERVE_EXTRA` | `[models.*]` in config | every model + extra present | ✓ M3: all 7 models under their bash keys (drafter, serve_extra, ctx, default_serve/_spec); the golden test compares paths + extras |
 | F3 | `EXTRAS` matrix + `EXTRAS_get_flags_normalized/_replaced` | `variants.py` codec | golden test: every generated key decodes to the same flags | ✓ M3: all 1249 `EXTRAS` keys + placeholder replacement for every model (`tests/test_cmd_build.py`); turbo keys raise "dropped" |
 | F4 | `run_bench_params*`, `_wrapper_EXTRAS`, `_wrapper_PROMPTS` | `mse-llm bench` | same argv in `--dry-run` (§0.1 bugs fixed) | ◐ M3: `bench --dry-run` argv = bash (differences below); `-v` list / repeated `--ctx` = the two wrappers; running in M7 |
-| F5 | `run_benchy_params_with_server*` | `mse-llm benchy` | same argv, `--pp` list passed once | ◐ M3: `benchy --dry-run` server + client argv = bash, lists after one flag; running in M5/M7 |
-| F6 | `run_serve_params_on_background`, `server_wait_for_ready`, `server_stop_windows` | `ServerHandle` | 50× start/stop, no orphans | ☐ M5 |
-| F7 | `run_serve_params` + `_FILTER`, output modes | `mse-llm serve --output` | same filtered lines | ◐ M3: `serve --dry-run` argv = bash (+ `--fit on`); running + output filter in M5 |
-| F8 | `run_presets_serve`, `run_PRESETS_serve`, `run_PRESETS_dump`, `run_presets_dump` | `mse-llm presets …` | existing INI serves all 5 models | ◐ M3: `presets serve --dry-run` argv = bash; `run_PRESETS_dump` = `serve --all --dry-run`; the rest in M5 |
+| F5 | `run_benchy_params_with_server*` | `mse-llm benchy` | same argv, `--pp` list passed once | ◐ M3: `benchy --dry-run` server + client argv = bash, lists after one flag; M5: `ServerHandle` for its server; running in M7 |
+| F6 | `run_serve_params_on_background`, `server_wait_for_ready`, `server_stop_windows` | `ServerHandle` | 50× start/stop, no orphans | ✓ M5: `ServerHandle` (port check, spawn in its own process group + kill-on-close Job Object, `/health` poll with fail-fast, graceful CTRL_BREAK, tree kill, port verified free). 50× with the fake server (2 children each) and 50× with the real router + 10× real model load/chat, no `llama-server` left |
+| F7 | `run_serve_params` + `_FILTER`, output modes | `mse-llm serve --output` | same filtered lines | ✓ M5: `serve` runs (foreground, Ctrl+C stops the tree), `--output filter` = the `run_serve_params_FILTER` regexes; + fit pre-check |
+| F8 | `run_presets_serve`, `run_PRESETS_serve`, `run_PRESETS_dump`, `run_presets_dump` | `mse-llm presets …` | existing INI serves all 5 models | ✓ M5: `presets serve` (foreground / `--background`, `--load`), `validate`, `fix`, `list`, `dump`, `generate`, `status`, `load`/`unload`, `watch`, `stop`; all 5 models listed, two models switched through one endpoint; the generated INI validates and maps back to every `default_serve` |
 | F9 | `EXEC_cmd_with_gpu_and_ram_monitoring` | `monitor/` | peaks within tolerance | ☐ M6 (M1: NVML/PDH availability checked by `doctor`) |
 | F10 | `run_dump_params_wrapper_PLOTER` | `mse-llm report chart` (+ `--legacy-log`) | old logs give the same chart | ☐ M8 |
 | F11 | `run_dump_params_wrapper_AI_PROMPT/_COMMON/_EXTRAS/_PROMPTS` | `mse-llm report prompt` | same sections + data | ☐ M8 |
 | F12 | `run_inspect_params*` | `mse-llm eval` | real eval runs | ◐ M3: `eval MODEL TASK --dry-run` = the bash builder (URL from the engine); running in M12 |
 | F13 | `EXEC_user_notification_WIN_T2S` | `notify.py` | voice message at end of run | ☐ M6 |
-| F14 | `EXEC_cmd_with_output_mode` (all/filter/none) | `--output` | — | ◐ M0: `[defaults].output`; behaviour in M5 |
+| F14 | `EXEC_cmd_with_output_mode` (all/filter/none) | `--output` | — | ✓ M5: `--output all\|filter\|none`, `[defaults].output`, `[defaults].output_filter` (default: the bash list) |
 | F15 | `MSE_*` knobs | config fields / `MSE_LLM_*` env / `--dry-run` | each knob mapped or dropped | ◐ M0: see the knob table below |
 | — | `run_BENCH_*`, `run_BENCHY_WITH_SERVER_*`, `run_SERVER_*`, `run_INSPECT_*` group functions (+ commented entries, "SWEETSPOT", "PC freeze" notes) | `[sweeps.*]` + `annotations` | one entry per function, notes kept | ☐ M7 |
 | — | Model notes in comments (HF URLs, sizes, capabilities) | `[models.*].url`, `notes` | nothing lost | ✓ M3: URLs, sizes, capabilities and the per-model bench notes (SWEETSPOT / PC freeze) in `config.example.toml`; per-entry annotations go to `[sweeps.*]` in M7 |
@@ -38,9 +38,9 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | `MSE_SERVER_READY_TIMEOUT` | `[defaults].server_ready_timeout` | ✓ M0 |
 | `MSE_MONITOR_ENABLED` | `[defaults].monitor` | ✓ M0 (used from M6) |
 | `MSE_LLAMA_BIN_DIR` | `[engines.*].bin_dir`, from the build profile | ✓ M0; M2: `builds\llama.cpp\build\bin\Release` built by `mse-llm build run`, same folder in the script |
-| `MSE_PS_DEBUG` | `-v/--verbose` | ☐ (no PowerShell left to debug after M6) |
-| `MSE_SERVER_PRESETS_DUMP` | `--dry-run`, `serve --all --dry-run` (`presets dump` of the INI in M5) | ✓ M3 |
-| `MSE_PRESETS_SERVE_FILE` | `[presets].file`, `presets serve --file` | ✓ M3 (argv); serving in M5 |
+| `MSE_PS_DEBUG` | — | ✗ dropped (needs your OK): it printed `ps aux` around the bash PID juggling; `ServerHandle` has no shell processes, and `StopReport` lists every PID of the tree |
+| `MSE_SERVER_PRESETS_DUMP` | `--dry-run`, `serve --all --dry-run`, `presets dump` (the INI) | ✓ M3, M5 |
+| `MSE_PRESETS_SERVE_FILE` | `[presets].file`, `presets serve --file` | ✓ M3 (argv), M5 (serving) |
 | `MSE_TEST_INSPECT_PATH` | `eval` config | ☐ M12 |
 
 ## M3: argv differences (bash → mse-llm)
@@ -88,7 +88,7 @@ Every built llama-server / llama-bench argv is also checked against the engine's
   * Under MSVC, llama.cpp enables VBMI with `__AVX512VBMI__` only (no `GGML_AVX512_VBMI` define); the
     verify step accepts either macro.
   * Build times on this laptop: vcpkg curl + openssl once ~5.5 min, configure ~45 s, full compile ~8-9.5 min.
-  * Not yet: `presets validate` (M5); the INI is checked by the `doctor flags` audit for now.
+  * Not yet: `presets validate` (M5); the INI is checked by the `doctor flags` audit for now. Done in M5.
 * **M3 (2026-11-19):** `variants.py` (codec with the legacy `extra_` prefix; new tokens `cmoe mc cs lm* nohost fitt
   Kf8 sd<N><type>`; turbo → "dropped" error; brace patterns; pasted bash arrays; matrix + `exclude`), command builders
   in `runners/` (llama-server, llama-bench, llama-benchy, inspect, router), flag validation against the help snapshot
@@ -117,3 +117,33 @@ Every built llama-server / llama-bench argv is also checked against the engine's
   * The drafter comes from `--draft` or `[models.*].draft`; variant names have no `md` token, and the presets
     INI `model-draft` key is read when presets run (M5).
   * Calibrating the estimated parts from server logs needs real runs: M5 (ServerHandle) / M7 (results store).
+* **M5 (2026-11-19):** `proc.py` (async spawn, log tee + output filter, process-tree stop, port checks),
+  `health.py` (`/health` poll, router API, SSE), `ServerHandle` in `runners/base.py`, `serve.py` (fit pre-check,
+  `--fit` preview, startup-log check, router loads, `results/servers/` state), `presets.py` (INI parse / validate /
+  fix / dump / generate), commands in `cli_serve.py`. New dependency: `httpx`.
+  * **`--fit on` can't shrink what `serve` passes.** llama.cpp's `--fit` adjusts only arguments the user did not
+    set; with `-ngl all` it aborts ("n_gpu_layers already set by user"), with `-ncmoe` too ("tensor_buft_overrides
+    already set by user"), and the server starts with exactly the requested settings. So a too-large config is
+    not shrunk, contrary to the plan's assumption (§0.3). The fit check says so and shows what `--fit` would
+    pick with both left unset (e.g. Qwen3.6-35B `moe10`: `-ngl all → 42`, experts of layers 15–40 on the CPU);
+    `serve --let-fit` runs exactly that. The plain `-ncmoe` answer from `fit --suggest` is shown too.
+  * **Graceful stop on Windows** is CTRL_BREAK to the server's own process group. llama-server only handles
+    Ctrl+C itself, so CTRL_BREAK ends it through the default handler (no cleanup of its own, but it exits at
+    once: 0.7 s per stop, nothing needed a kill). Ctrl+C can't be sent to another process group on Windows.
+  * **Attached servers sit in a kill-on-close Job Object**, so if mse-llm itself is killed, Windows ends the
+    server and every router child too. `--background` routers leave that job (they must outlive mse-llm),
+    use a hidden console that their children share, and are stopped by PID from `results/servers/router-<port>.json`
+    (`presets stop`), with the process create time checked so a reused PID is never killed.
+    A killed router with the 26B gemma loaded (`-lm none`, ~20 GB in RAM) takes Windows ~8 s to tear down, so the
+    stop waits up to 20 s after the kill before it reports a process as still running.
+  * Checked with the real router (port 18033): `presets serve --background --load Tesslate_OmniCoder-9B-Q4_K_M`,
+    a chat request to it, `presets load gemma-4-26B-A4B-it-qat-UD-Q4_K_XL` (the router unloaded OmniCoder:
+    `models_max = 1`), a chat request to gemma through the same endpoint, `presets status`, `presets stop`:
+    every process gone, state file removed.
+  * `presets serve --load` waits by polling `GET /models` instead of following `/models/sse` (simpler, same
+    result); `presets watch` follows `/models/sse`.
+  * `[presets]` in the config gained `models_max = 1` and `memory_margin_mib = 1024` (12 GB VRAM), `autoload`,
+    `load_on_start`; the golden test still compares the builder without them against `run_PRESETS_serve`.
+  * `presets validate` on the original INI (reconstructed in `tests/fixtures/presets/original_broken.ini`) gives
+    the §4.3 findings; `presets fix --write` turns it into the committed `llama_cpp_presets.ini` except the comments.
+  * The ServerHandle cycle test runs 10× by default (~25 s); `MSE_LLM_TEST_CYCLES=50` runs the acceptance count.

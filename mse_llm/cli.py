@@ -963,6 +963,17 @@ def models_show(ctx: Ctx, name) -> None:
 
 def _show_commands(ctx: Ctx, cmds: list, dry_run: bool, runs_in: str) -> None:
     """Print built commands (with flag-check errors and warnings); without --dry-run say when running lands."""
+    _print_commands(ctx, cmds)
+    bad = [c for c in cmds if not c.ok]
+    if bad:
+        if not ctx.json:
+            console.print(f"[red]{len(bad)} of {len(cmds)} command(s) failed the flag check[/]")
+        sys.exit(1)
+    if not dry_run:
+        raise click.ClickException(f"running this arrives in {runs_in}; for now use --dry-run to see the commands")
+
+
+def _print_commands(ctx: Ctx, cmds: list) -> None:
     from mse_llm.runners import display_argv
 
     if ctx.json:
@@ -982,13 +993,6 @@ def _show_commands(ctx: Ctx, cmds: list, dry_run: bool, runs_in: str) -> None:
         snaps = {c.snapshot or (c.server.snapshot if c.server else None) for c in cmds} - {None}
         if snaps:
             console.print(f"[dim]flags checked against help snapshot {', '.join(sorted(snaps))}[/]")
-    bad = [c for c in cmds if not c.ok]
-    if bad:
-        if not ctx.json:
-            console.print(f"[red]{len(bad)} of {len(cmds)} command(s) failed the flag check[/]")
-        sys.exit(1)
-    if not dry_run:
-        raise click.ClickException(f"running this arrives in {runs_in}; for now use --dry-run to see the commands")
 
 
 def _variants_for(ctx: Ctx, model: str, patterns, from_file, spec: bool = False) -> list:
@@ -1061,37 +1065,7 @@ def benchy_cmd(ctx: Ctx, model, patterns, from_file, engine, dry_run, ctx_, pp, 
     vs = _variants_for(ctx, model, patterns, from_file)
     cmds = [benchy_command(ctx.cfg, model, v, ctx_, engine, pp=list(pp) or None, tg=list(tg) or None,
                            depth=list(depth) or None, runs=runs) for v in vs]
-    _show_commands(ctx, cmds, dry_run, "M5 (ServerHandle) + M7 (benchy)")
-
-
-@main.command("serve")
-@click.argument("model", required=False)
-@click.option("-v", "--variant", "patterns", multiple=True, help="Variant (default: [models].default_serve).")
-@click.option("--spec", is_flag=True, help="Use default_serve_spec (bash SD_ENABLED=1).")
-@click.option("--ctx", "ctx_", type=int, default=None, help="Context -c (default: [models].ctx).")
-@click.option("--port", type=int, default=None)
-@click.option("--all", "all_", is_flag=True, help="Every model with a default_serve (bash run_PRESETS_dump).")
-@click.option("--engine", default=None)
-@click.option("--dry-run", is_flag=True,
-              help="Print the command (flag-checked) and stop (bash MSE_SERVER_PRESETS_DUMP).")
-@json_option
-@pass_ctx
-def serve_cmd(ctx: Ctx, model, patterns, spec, ctx_, port, all_, engine, dry_run) -> None:
-    """llama-server for one model with --fit on (bash run_serve_params / run_SERVER_*)."""
-    from mse_llm.runners import server_command
-
-    if all_:
-        keys = [k for k, m in ctx.cfg.models.items() if (m.default_serve_spec if spec else m.default_serve)]
-        cmds = [server_command(ctx.cfg, k, _variants_for(ctx, k, (), None, spec)[0], ctx_, engine, port=port)
-                for k in keys]
-    elif model:
-        vs = _variants_for(ctx, model, patterns, None, spec)
-        if len(vs) > 1:
-            raise click.ClickException("serve runs one variant; got " + ", ".join(v.name for v in vs))
-        cmds = [server_command(ctx.cfg, model, vs[0], ctx_, engine, port=port)]
-    else:
-        raise click.ClickException("give a MODEL or --all")
-    _show_commands(ctx, cmds, dry_run, "M5 (serve)")
+    _show_commands(ctx, cmds, dry_run, "M7 (benchy + results store)")
 
 
 @main.command("eval")
@@ -1261,29 +1235,7 @@ def _print_fit(rep) -> None:
     console.print(f"[dim]{legend}[/]")
 
 
-@main.group()
-def presets() -> None:
-    """Multi-model router from an INI file (§4.3). M3: `serve --dry-run`; the rest arrives in M5."""
-
-
-@presets.command("serve")
-@click.option("--file", "file_", type=click.Path(dir_okay=False), default=None,
-              help="Presets INI (default: [presets].file = llama_cpp_presets.ini).")
-@click.option("--port", type=int, default=None)
-@click.option("--models-max", type=int, default=None)
-@click.option("--memory-margin", "memory_margin", type=int, default=None, help="MiB (--models-memory-margin).")
-@click.option("--engine", default=None)
-@click.option("--dry-run", is_flag=True)
-@json_option
-@pass_ctx
-def presets_serve(ctx: Ctx, file_, port, models_max, memory_margin, engine, dry_run) -> None:
-    """llama-server --models-preset INI (bash run_PRESETS_serve)."""
-    from mse_llm.runners import presets_serve_command
-
-    cmd = presets_serve_command(ctx.cfg, file_, engine, port=port, models_max=models_max,
-                                memory_margin_mib=memory_margin)
-    _show_commands(ctx, [cmd], dry_run, "M5 (presets serve)")
-
+from mse_llm import cli_serve as _cli_serve  # noqa: E402,F401  (registers serve + presets)
 
 if __name__ == "__main__":
     main()

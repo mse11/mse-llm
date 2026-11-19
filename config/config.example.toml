@@ -14,7 +14,8 @@ bench_repetitions = 1       # llama-bench -r (bash used the implicit default 5)
 server_ready_timeout = 120  # bash MSE_SERVER_READY_TIMEOUT (was 30)
 notify = true
 monitor = true              # bash MSE_MONITOR_ENABLED
-output = "filter"           # all | filter | none
+output = "filter"           # all | filter | none (bash EXEC_cmd_with_output_mode)
+# output_filter = ["llama_context: n_ctx", "[Ee]rror"]   # regexes for --output filter; default: bash run_serve_params_FILTER
 
 [defaults.benchy]
 pp = [512, 2048, 8192, 32768]   # bash MSE_BENCHY_PP
@@ -38,6 +39,12 @@ disk_pass_gb = 60
 
 [presets]
 file = "llama_cpp_presets.ini"   # bash MSE_PRESETS_SERVE_FILE; switches to config/presets.ini in M13
+# engine = "cuda_flash"          # which llama-server binary (default: cuda_flash)
+# port = 8033                    # default: the engine's port
+models_max = 1                   # 12 GB VRAM: one large model at a time (router default: 4)
+memory_margin_mib = 1024         # router unloads LRU models to keep this much VRAM free (mmproj is not counted)
+autoload = true                  # load a model on its first request (false: --no-models-autoload)
+load_on_start = []               # e.g. ["Qwen3.6-35B-A3B-UD-Q4_K_M-MTP"]: loaded right after the router is up
 
 # Models: the bash MODELS / DRAFTER_MODELS / MODELS_SERVE_EXTRA / MODELS_BENCH_EXTRA maps (F2), with the
 # script's comments (HF URLs, sizes, capabilities, bench notes) as url / notes. Keys are the bash keys, so

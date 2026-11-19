@@ -209,7 +209,8 @@ def test_cli_benchy_eval_presets_dry_run():
     assert json.loads(r.output)[0]["argv"][-1] == "http://localhost:8033/v1"
     r = _cli(["--json", "presets", "serve", "--dry-run"])
     assert r.exit_code == 0, r.output
-    assert json.loads(r.output)[0]["argv"][1] == "--models-preset"
+    out = json.loads(r.output)
+    assert out["argv"][1] == "--models-preset" and out["validation"]["errors"] == 0
     r = _cli(["serve", "--all", "--dry-run"])
     assert r.exit_code == 0 and r.output.count("▶ serve") == 7
 

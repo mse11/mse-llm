@@ -33,7 +33,7 @@ Binaries land in `builds\llama.cpp\build\bin\Release`, the folder the bash scrip
 `MSE_LLAMA_BIN_DIR` uses. Full logs: `builds\logs\`.
 
 Variants and commands (M3: `--dry-run` shows the exact argv, checked against the llama.cpp help
-snapshot; running them arrives in M5/M7/M12):
+snapshot; `serve` / `presets` run since M5, bench/benchy in M7, eval in M12):
 
 ```
 uv run mse-llm models list
@@ -63,6 +63,29 @@ Verdicts: `fits` (every part measured), `fits~` (drafter KV/compute or mmproj es
 (under `--margin`, default 768 MiB), `NO-FIT`, `UNSURE` (a part NOT COUNTED, e.g. an `sd*mtp` variant with no
 drafter; `--strict` exits 1). `--suggest` gives the lowest `-ncmoe` that fits, checked with extra
 llama-fit-params calls, and the largest `-ub`.
+
+Serving (M5). `serve` runs the fit check first, warns about `NO-FIT` / `TIGHT` / `UNSURE` with what
+llama.cpp's `--fit` would change, and asks before starting (`--yes` skips the question). Ctrl+C stops the
+server and every child process; the port is checked free afterwards. Logs: `results\servers\`.
+
+```
+uv run mse-llm serve Qwen36_28B_REAP20_A3B_Q4_K_M                        # run_SERVER_* (default_serve, --fit on)
+uv run mse-llm serve omnicoder_9b --output all                           # all | filter (default) | none
+uv run mse-llm serve --preset gemma-4-26B-A4B-it-qat-UD-Q4_K_XL          # one INI section, outside the router
+uv run mse-llm serve Qwen36_35B_A3B_UD_Q4_K_M_MTP -v fa_Kq8_Vq8_default_moe10 --let-fit   # let --fit place layers
+
+uv run mse-llm presets validate                 # every key vs llama-server --help, model files, [*]
+uv run mse-llm presets fix --write              # rewrite only the broken lines (keeps FILE.bak + comments)
+uv run mse-llm presets list | dump [NAME]       # sections, variant ≈, the equivalent single-model command
+uv run mse-llm presets generate --out config/presets.ini   # INI from [models.*] + default_serve
+uv run mse-llm presets serve                    # run_PRESETS_serve, foreground (Ctrl+C stops all models)
+uv run mse-llm presets serve --background --load Tesslate_OmniCoder-9B-Q4_K_M
+uv run mse-llm presets status | load NAME | unload NAME | watch | stop
+```
+
+`--fit` only adjusts what you did not set: with `-ngl all` (always passed by `serve`) or `-ncmoe`, llama.cpp
+aborts the fit and starts with exactly the requested settings, so a config that doesn't fit is not shrunk.
+The fit check says so and shows what `--fit` would pick with both left unset (`serve --let-fit`).
 
 Configuration: `config/config.toml` if present, else `config/config.example.toml`
 (override with `--config` or `MSE_LLM_CONFIG`).

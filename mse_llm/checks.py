@@ -9,6 +9,7 @@ Status = Literal["pass", "warn", "fail", "info", "skip"]
 ORDER = {"fail": 0, "warn": 1, "pass": 2, "info": 3, "skip": 4}
 ICON = {"pass": "[green]OK[/]", "warn": "[yellow]WARN[/]", "fail": "[red]FAIL[/]",
         "info": "[cyan]info[/]", "skip": "[dim]skip[/]"}
+PLAIN_ICON = {"pass": "✓", "warn": "⚠", "fail": "✗", "info": "·", "skip": "-"}
 
 
 @dataclass

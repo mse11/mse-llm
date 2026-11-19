@@ -1,0 +1,2 @@
+version: 1.0.0-dev (build 12515, commit ffc87c3a7)
+built with MSVC 19.41.34123.0 for x64

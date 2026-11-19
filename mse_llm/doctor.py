@@ -59,7 +59,7 @@ def _nvcc() -> list[str]:
 
 
 def toolchain_checks() -> list[Check]:
-    why = "mse-llm build (M2)"
+    why = "mse-llm build"
     out = [
         _tool_check("git", ["git", "--version"], (2, 25), why),
         _tool_check("cmake", ["cmake", "--version"], (3, 21), why),
@@ -125,7 +125,7 @@ def engine_checks(cfg: Config, info: HardwareInfo) -> list[Check]:
         if missing:
             hint = (f"mse-llm build run {eng.build_profile}" if eng.build_profile else "build llama.cpp")
             out.append(Check(sec, "binaries", "warn", f"not built yet: {', '.join(missing)} missing in {bdir}",
-                             f"{hint} (M2)"))
+                             hint))
         else:
             r = run([str(exe(bdir / "llama-server")), "--version"], timeout=30)
             txt = (r.stdout + r.stderr).strip().splitlines()
@@ -241,6 +241,41 @@ def model_checks(cfg: Config) -> list[Check]:
     return [Check("config", "models", "pass", f"{len(cfg.models)} GGUF files found")]
 
 
+def build_checks(cfg: Config, info: HardwareInfo) -> list[Check]:
+    """Per engine built by `mse-llm build`: vcpkg toolchain file, FA_ALL_QUANTS and CUDA arch in CMakeCache."""
+    from mse_llm import build as b
+
+    out: list[Check] = []
+    gpu = info.primary_gpu()
+    for name, eng in cfg.engines.items():
+        m = b.read_manifest(eng.bin_path())
+        if not m:
+            continue
+        sec = f"engine {name}"
+        bdir = Path(m.get("build_dir", ""))
+        cache = b.read_cmake_cache(bdir)
+        if not cache:
+            out.append(Check(sec, "CMakeCache", "warn", f"missing in {bdir}"))
+            continue
+        tc = cache.get("CMAKE_TOOLCHAIN_FILE")
+        if tc:
+            ok = Path(tc).is_file()
+            out.append(Check(sec, "vcpkg toolchain", "pass" if ok else "warn", tc,
+                             None if ok else "vcpkg is gone; `mse-llm build clone` restores it"))
+        fa = b.same_value("ON", cache.get("GGML_CUDA_FA_ALL_QUANTS"))
+        out.append(Check(sec, "FA all quants", "pass" if fa else "warn",
+                         f"GGML_CUDA_FA_ALL_QUANTS={cache.get('GGML_CUDA_FA_ALL_QUANTS', 'unset')}",
+                         None if fa else "asymmetric K/V sweeps (Kq8_Vq4 ...) would measure a slow fallback"))
+        archs = cache.get("CMAKE_CUDA_ARCHITECTURES", "")
+        cov = b.cuda_arch_covers(archs, gpu.compute_capability if gpu else None)
+        if cov is not None:
+            out.append(Check(sec, "CUDA arch", "pass" if cov else "fail",
+                             f"{archs} vs cc {gpu.compute_capability}",
+                             None if cov else "this build can't run on the detected GPU; use another profile"))
+        out.append(Check(sec, "build", "info", f"{m.get('describe')} built {m.get('built_at')} ({m.get('target')})"))
+    return out
+
+
 def run_doctor(cfg: Config, info: HardwareInfo | None = None) -> list[Check]:
     info = info or hw.detect(disk_paths=disk_paths(cfg))
     profiles = list_profiles()
@@ -259,4 +294,14 @@ def run_doctor(cfg: Config, info: HardwareInfo | None = None) -> list[Check]:
     out += driver_checks(info)
     out += monitor_checks()
     out += engine_checks(cfg, info)
-    return out
+    out += build_checks(cfg, info)
+    return group_by_section(out)
+
+
+def group_by_section(checks: list[Check]) -> list[Check]:
+    """Keep the checks of one section together (in the order sections first appear), so e.g. all
+    `engine cuda_flash` rows come before `engine cuda_flash-without-…`."""
+    first: dict[str, int] = {}
+    for i, c in enumerate(checks):
+        first.setdefault(c.section, i)
+    return sorted(checks, key=lambda c: first[c.section])   # stable: order inside a section is kept

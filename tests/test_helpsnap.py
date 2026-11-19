@@ -85,3 +85,8 @@ def test_snapshot_roundtrip(tmp_path):
     assert hs.list_snapshots(tmp_path) == [d]
     snap = hs.load_snapshot(d)
     assert "--spec-type" in snap["llama-server"]
+
+
+def test_version_id_formats():
+    assert hs.version_id("version: 12468 (a49db739f)\nbuilt with MSVC") == "a49db739f"
+    assert hs.version_id("version: 1.0.0-dev (build 12515, commit ffc87c3a7)") == "ffc87c3a7"

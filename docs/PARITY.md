@@ -8,7 +8,7 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 
 | # | Script feature (bash) | Replacement | Check | Status |
 |---|---|---|---|---|
-| F1 | `run_HELP_server/bench__*` | `mse-llm help server\|bench` (+ `benchy`, `eval`), `doctor flags` | output identical to `--help` | ◐ M0: commands done; output check needs the M2 build |
+| F1 | `run_HELP_server/bench__*` | `mse-llm help server\|bench` (+ `benchy`, `eval`), `doctor flags` | output identical to `--help` | ✓ M2: real snapshots `a49db739f` + `ffc87c3a7` stored; `doctor flags` diff + audit checked against them |
 | F2 | `MODELS`, `DRAFTER_MODELS`, `MODELS_BENCH_EXTRA`, `MODELS_SERVE_EXTRA` | `[models.*]` in config | every model + extra present | ◐ M0: schema + the 5 INI models; full set from the script in M3 |
 | F3 | `EXTRAS` matrix + `EXTRAS_get_flags_normalized/_replaced` | `variants.py` codec | golden test: every generated key decodes to the same flags | ☐ M3 |
 | F4 | `run_bench_params*`, `_wrapper_EXTRAS`, `_wrapper_PROMPTS` | `mse-llm bench` | same argv in `--dry-run` (§0.1 bugs fixed) | ☐ M3/M7 |
@@ -37,7 +37,7 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | `MSE_BENCHY_PP` / `_PP_SYNCH` / `_DEPTH` / `_RUNS` | `[defaults.benchy]`, `MSE_LLM_BENCHY_*` | ✓ M0 |
 | `MSE_SERVER_READY_TIMEOUT` | `[defaults].server_ready_timeout` | ✓ M0 |
 | `MSE_MONITOR_ENABLED` | `[defaults].monitor` | ✓ M0 (used from M6) |
-| `MSE_LLAMA_BIN_DIR` | `[engines.*].bin_dir`, from the build profile | ✓ M0 |
+| `MSE_LLAMA_BIN_DIR` | `[engines.*].bin_dir`, from the build profile | ✓ M0; M2: `builds\llama.cpp\build\bin\Release` built by `mse-llm build run`, same folder in the script |
 | `MSE_PS_DEBUG` | `-v/--verbose` | ☐ (no PowerShell left to debug after M6) |
 | `MSE_SERVER_PRESETS_DUMP` | `--dry-run` / `presets dump` | ☐ M5 |
 | `MSE_PRESETS_SERVE_FILE` | `presets serve --file` | ☐ M5 |
@@ -49,3 +49,18 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
   check), `doctor flags` (help snapshots, diff, script/INI audit), `help`, `hw` / `hw identity` /
   `hw processes`, `MSE_LLM_TEST_HARDWARE` / `--hw-fixture`. Baseline bash script + INI were
   already committed in the initial commit.
+* **M2 (2026-11-18/19):** `mse-llm build list / plan / run / clone / show / info / versions / explain / clean`.
+  First build from the repo-local clone: llama.cpp `ffc87c3a7` (master) into `builds\llama.cpp\build`,
+  the folder the bash script uses, so **the bash script works again**. Also built: the comparison build
+  `--without zen4-avx512x` (engine `cuda_flash-without-zen4-avx512x`) and the reference `a49db739f`
+  (`--ref a49db739f --keep-previous`, engine `cuda_flash-a49db739f`). All three verified: CMakeCache flags,
+  `/arch:AVX512`, VNNI/VBMI defines (present or absent as requested), sm_89, FA all quants, CUDA0 = RTX 4080 Laptop.
+  * **Flag diff `a49db739f` → `ffc87c3a7`: no changes** in `llama-server` or `llama-bench` (42 commits apart).
+    The audit reproduces the §0 findings in the script: `-fa 1` (deprecated) and the dropped `turbo2/3/4`
+    cache types (15 findings). The fixed `llama_cpp_presets.ini` has no findings.
+  * **`GGML_AVX512_BF16` removed from `zen4-avx512x`:** MSVC can't compile it
+    (`sgemm.cpp(380): error C2440: cannot convert from '__m512' to '__m512bh'`). The variant is now VNNI + VBMI.
+  * Under MSVC, llama.cpp enables VBMI with `__AVX512VBMI__` only (no `GGML_AVX512_VBMI` define); the
+    verify step accepts either macro.
+  * Build times on this laptop: vcpkg curl + openssl once ~5.5 min, configure ~45 s, full compile ~8-9.5 min.
+  * Not yet: `presets validate` (M5); the INI is checked by the `doctor flags` audit for now.

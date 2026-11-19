@@ -7,6 +7,7 @@ Engines come from [engines.*] in the config and from the [engine] table of every
 
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from pathlib import Path
@@ -164,6 +165,18 @@ def _engines_from_build_profiles() -> dict[str, dict[str, Any]]:
             "port": eng.get("port", 8033),
             "build_profile": prof.name,
         }
+        # Comparison / pinned-version builds (build-without-*, build-<variant>, build-<ref>) register
+        # themselves through their build-manifest.json as "<engine>-<suffix>".
+        default_bin = os.path.normcase(str(prof.bin_dir))
+        for mpath in sorted(prof.src.glob("build-*/bin/*/build-manifest.json")) if prof.src.is_dir() else []:
+            try:
+                m = json.loads(mpath.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            name = m.get("engine")
+            if not name or name in out or os.path.normcase(str(mpath.parent)) == default_bin:
+                continue
+            out[name] = {**out[eng["name"]], "bin_dir": str(mpath.parent)}
     return out
 
 

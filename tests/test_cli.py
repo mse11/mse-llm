@@ -58,3 +58,13 @@ def test_doctor_flags_uses_stored_snapshot(tmp_path, monkeypatch):
     msgs = " | ".join(f["message"] for f in data["findings"])
     assert "turbo4" in msgs          # bash script's turbo cache types (§0.1)
     assert r.exit_code == 1
+
+
+def test_doctor_groups_checks_by_section():
+    from mse_llm.checks import Check
+    from mse_llm.doctor import group_by_section
+
+    cs = [Check("engine a", "binaries", "pass", ""), Check("engine b", "binaries", "pass", ""),
+          Check("engine a", "build", "info", ""), Check("engine b", "build", "info", "")]
+    got = [(c.section, c.name) for c in group_by_section(cs)]
+    assert got == [("engine a", "binaries"), ("engine a", "build"), ("engine b", "binaries"), ("engine b", "build")]

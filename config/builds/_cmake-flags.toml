@@ -130,4 +130,4 @@ effect = "Faster CPU math on BF16 tensors (BF16 model files, -ctk/-ctv bf16, lla
 affects = ["tg", "pp"]
 default = "OFF (MSVC never auto-detects it)"
 source = "ggml/src/ggml-cpu/llamafile/sgemm.cpp:151,378,460, vec.cpp"
-note = "Zen 4 supports it."
+note = "Zen 4 supports it, but MSVC can't compile it: sgemm.cpp(380) error C2440 (cast __m512 -> __m512bh), seen with b12509-6 on 2026-11-18. Not set in zen4-avx512x."

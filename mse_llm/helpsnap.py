@@ -114,8 +114,29 @@ def parse_help(text: str) -> HelpInfo:
 
 # ---------------------------------------------------------------- snapshots
 
+def strip_bin_dir(text: str, bin_dir: Path) -> str:
+    """llama-bench prints its own full path in the usage line; store <bin> instead, so snapshots don't
+    depend on the build folder (and don't put local paths into the repo)."""
+    for form in {str(bin_dir), str(bin_dir).replace("\\", "/")}:
+        text = text.replace(form, "<bin>")
+    return text
+
+
+def read_help(binary: Path, timeout: float = 30) -> str:
+    """`<binary> --help` (stdout + stderr). Run twice and keep the longer output: once in a while the
+    last lines went missing (seen with llama-bench on Windows), which showed up as a removed flag."""
+    outs = []
+    for _ in range(2):
+        r = run([str(binary), "--help"], timeout=timeout)
+        if r.error:
+            raise RuntimeError(f"{binary.name} --help: {r.error}")
+        outs.append(r.stdout + r.stderr)
+    return max(outs, key=len)
+
+
 def version_id(version_text: str) -> str | None:
-    m = re.search(r"version:\s*\d+\s*\(([0-9a-f]{6,40})\)", version_text)
+    # "version: 12468 (a49db739f)" (before 1.0) or "version: 1.0.0-dev (build 12515, commit ffc87c3a7)"
+    m = re.search(r"version:\s*\S+\s*\((?:build \d+, commit )?([0-9a-f]{6,40})\)", version_text)
     return m.group(1) if m else None
 
 
@@ -130,11 +151,12 @@ def capture(bin_dir: Path, dest_root: Path | None = None) -> tuple[str, Path]:
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "version.txt").write_text(vtext, encoding="utf-8")
     for tool in TOOLS:
-        r = run([str(exe(bin_dir / tool)), "--help"], timeout=30)
-        if r.error:
-            raise RuntimeError(f"{tool} --help: {r.error}")
-        (dest / f"{tool}.txt").write_text(r.stdout + r.stderr, encoding="utf-8")
-    meta = {"id": sid, "bin_dir": str(bin_dir),
+        (dest / f"{tool}.txt").write_text(strip_bin_dir(read_help(exe(bin_dir / tool)), bin_dir), encoding="utf-8")
+    try:
+        shown = bin_dir.resolve().relative_to(project_root()).as_posix()
+    except ValueError:
+        shown = str(bin_dir)
+    meta = {"id": sid, "bin_dir": shown,
             "captured_at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")}
     (dest / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return sid, dest

@@ -1,7 +1,7 @@
 """Minimal build-profile loader (config/builds/*.toml, §0.4).
 
 M0/M1 only need: the list of profiles, `extends` merging, path expansion, the [target] matchers and
-the [engine] table with its bin_dir. The full `mse-llm build` (M2) builds on this.
+the [engine] table with its bin_dir. `mse-llm build` (build.py) builds on this.
 """
 
 from __future__ import annotations

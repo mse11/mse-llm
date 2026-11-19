@@ -22,6 +22,31 @@ CACHE_SECONDS = 30.0
 _cache: tuple[float, tuple, HardwareInfo] | None = None
 
 
+LOW_POWER_RE = __import__("re").compile(r"quiet|silent|saver|saving|eco\b|battery|whisper|low.?power", 2)
+
+
+def low_power_plan(plan: str | None) -> bool:
+    """A power plan that caps CPU / GPU power (Lenovo Legion "Quiet Mode", "Power saver", ...)."""
+    return bool(plan and LOW_POWER_RE.search(plan))
+
+
+ALLOW_LOW_POWER_ENV = "MSE_LLM_ALLOW_LOW_POWER"
+
+
+def bench_power_problem(p=None) -> str | None:
+    """Why benchmark numbers from this power state would be useless (battery, quiet / power-saving plan),
+    or None. Read fresh (not the hw cache): the plan can be switched between two commands."""
+    if p is None:
+        from mse_llm.hw.power import detect_power
+
+        p = detect_power()
+    if p.ac_online is False:
+        return f"on battery ({p.battery_percent} %)" if p.battery_percent is not None else "on battery"
+    if low_power_plan(p.power_plan):
+        return f"power plan {p.power_plan!r} caps CPU / GPU power"
+    return None
+
+
 def _host() -> HostInfo:
     ver = platform.version()
     release = platform.release()
@@ -213,6 +238,11 @@ def checks(info: HardwareInfo, thresholds=None) -> list[Check]:
     if p.ac_online is False:
         out.append(Check(s, "power", "warn", f"on battery ({p.battery_percent} %)",
                          "benches refuse to start on battery unless --allow-battery"))
+    elif p.ac_online and low_power_plan(p.power_plan):
+        out.append(Check(s, "power", "warn", f"AC, plan {p.power_plan}",
+                         "a quiet / power-saving plan caps CPU and GPU power: TG with experts on the CPU drops and "
+                         "varies run to run (measured: gemma QAT 6-36 t/s); switch to a performance plan before "
+                         "benchmarking"))
     elif p.ac_online:
         out.append(Check(s, "power", "pass", "AC" + (f", plan {p.power_plan}" if p.power_plan else "")))
     else:

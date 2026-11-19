@@ -18,3 +18,11 @@ def _clean_env(monkeypatch, tmp_path):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("MSE_LLM_NO_NOTIFY", "1")      # tests never speak
     monkeypatch.setenv("MSE_LLM_RESULTS_DIR", str(tmp_path / "results"))   # never the repo's results/
+
+
+@pytest.fixture(autouse=True)
+def _performance_power(monkeypatch):
+    """Benchmark commands stop on battery / a quiet power plan; the machine running the tests may be on one."""
+    from mse_llm import hw
+
+    monkeypatch.setattr(hw, "bench_power_problem", lambda p=None: None)

@@ -252,4 +252,5 @@ def hw_record(root: Path | None = None) -> dict[str, Any]:
     ac = getattr(info.power, "ac_online", None)
     power = None if ac is None else ("AC power" if ac else "on battery")
     return {"hash": ident["hash"], "soft_hash": ident["soft_hash"], "driver": ident["soft"].get("driver"),
-            "gpu": nv[0].name if nv else None, "power": power}
+            "gpu": nv[0].name if nv else None, "power": power,
+            "power_plan": getattr(info.power, "power_plan", None)}

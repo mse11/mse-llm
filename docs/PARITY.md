@@ -226,3 +226,31 @@ Every built llama-server / llama-bench argv is also checked against the engine's
     `results export --csv` (per run or `--tests`).
   * matplotlib, numpy and jinja2 are normal dependencies, not the optional `[report]` extra the plan named, so
     `uv run mse-llm report chart` works without an extra install step.
+* **M9 (2026-11-19, acceptance runs pending):** `predict.py` (GGUF roofline shape, spec bandwidths from `hw`,
+  `-ncmoe × -ub` memory grid via llama-fit-params, calibration from the results store), `search.py` (staged safe
+  search), `cli_predict.py`: `predict`, `results calibrate`, `sweep search`.
+  * **Memory grid:** per `-ub` only the highest and lowest `-ncmoe` are measured, the rest follows "one step = one
+    expert layer" (`--exact` measures every point). `sweep search` never starts a point predicted no-fit or tight,
+    and every job still gets the normal fit check and memory guard.
+  * **Calibration:** six terms (VRAM / RAM bandwidth and per-token cost for TG; GPU FLOPS, PCIe bandwidth and
+    per-ubatch cost for PP) fitted as scale factors on the spec values, pulled towards 1; then the same fit per
+    model (a model's quant types decide how fast the CPU runs its experts). Speculative-decoding runs are not used.
+    On the 6 M7 runs (OmniCoder 9B dense, Qwen3.6-35B `moe41`): leave-one-out median error 3.5 %, 11 of 12 within
+    15 %; effective RAM came out at ~34 GB/s (spec 83 GB/s dual channel × 0.72 = 60).
+  * **Real `sweep search gemma_4_26B_A4b_QAT_UD_Q4_K_XL` (ctx 65536, build ffc87c3a7):** order ncmoe then ub
+    (predicted ×1.96 vs ×1.77), 7 runs, **no run spilled**; ncmoe stage 30 → 10, moe9 predicted tight (edge), winner
+    one step back; ub stage at moe15: 512 → 2048, ub 4096 predicted no-fit; winner `fa_Kq8_Vq8_b1024_ub1024_moe15`.
+  * **Power plan "Legion Quiet Mode" breaks TG.** That run was on AC but under the Lenovo quiet plan: TG with experts
+    on the CPU was 5.9 t/s at moe30 (bash era, build ad1b88ca0: 27.4) and **11.1 vs 32.1 t/s for the same moe15
+    config** in two runs; PP was ~3× below the bash numbers (moe15 714 t/s vs moe16 2247). PP stays predictable
+    (leave-one-out within 15 % for all 7 runs), TG doesn't (7 of 14 values within 15 %). Now: `hw` / `doctor` warn
+    on a quiet / power-saving plan, every run records `hw.power_plan`, and calibration and `sweep search` reuse only
+    runs of the current plan (runs before M9 have no plan and are kept). The 7 quiet runs were tagged afterwards.
+    `bench`, `benchy`, `sweep run` and `sweep search` now stop before the first job on battery or a quiet plan
+    (`--allow-low-power` / `MSE_LLM_ALLOW_LOW_POWER=1` to run anyway; dry runs never stop).
+  * **Open:** acceptance (TG/PP within ~15 % for 2 models; a search without a spill) re-run under a performance plan:
+    `sweep search` for gemma QAT and Qwen3.6-35B MTP, then `results calibrate`. Whether build ffc87c3a7 itself is
+    slower for gemma QAT than ad1b88ca0 (`cuda_flash` vs `cuda_flash-without-zen4-avx512x`) is checked then, since the
+    quiet plan hides it.
+  * Not in M9: the K/V and speculative-decoding stages of §9 item 6 (they need KLD and acceptance rate, M10);
+    writing into the presets INI (`--apply` writes `default_serve`, which `presets generate` uses).

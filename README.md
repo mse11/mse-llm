@@ -128,9 +128,31 @@ uv run mse-llm results export --csv runs.csv [--tests]
 
 One bar per configuration: the newest run of the same tool / model / variant / ctx wins (`--all-runs` for all).
 
+Predict and search (M9, §4.6, §9 item 6). `predict` measures an `-ncmoe × -ub` grid with llama-fit-params
+(endpoints measured, the rest by the "one `-ncmoe` step = one expert layer" rule; `--exact` measures every
+point) and estimates TG / PP with a roofline from the GGUF (dense bytes, expert bytes, `n_used / n_expert`,
+attention layers) and this PC's bandwidths (`hw` spec values). The bandwidths are calibrated on the stored ok
+runs of this PC, globally and per model (a model's own runs teach it, for example, how fast the CPU runs its
+experts); speculative-decoding runs are not used. `sweep search` uses the prediction to pick the order of the
+stages, starts on the safe side (all experts on the CPU, smallest `-ub`), never starts a config predicted
+no-fit or tight, stops a stage at the first spill / failed / skipped run, and takes the winner one step back
+from the edge. Earlier ok runs with the same settings and build are reused. The search is stored in
+`results/search/<model>/<build>__<hw>.json`.
+
+```
+uv run mse-llm predict gemma_4_26B_A4b_QAT_UD_Q4_K_XL [--ctx 65536] [--ncmoe 30:10:5] [--ub 512,2048] [--json]
+uv run mse-llm results calibrate                 # fitted speeds; measured vs predicted per run, leave-one-out
+uv run mse-llm sweep search gemma_4_26B_A4b_QAT_UD_Q4_K_XL --dry-run   # the stages with predicted results
+uv run mse-llm sweep search gemma_4_26B_A4b_QAT_UD_Q4_K_XL [--goal tg|pp|both] [--axes ub,ncmoe] [--apply]
+```
+
+`--apply` writes the winner as `[models.*].default_serve` into the config file (`presets generate` uses it).
+
 Sweep entries keep the bash comments as data: `status = "off"` (commented out: `--include-off`),
 `status = "skip"` ("PC freeze": only with `--force`), `note` and `tag` (sweetspot, sporadic-freeze, ...).
-`--resume` skips variants that already have an `ok` result for the same build. Exit code 1 if a job failed,
+`bench`, `benchy`, `sweep run` and `sweep search` stop before the first job on battery or under a quiet /
+power-saving plan (e.g. Legion Quiet Mode: TG of one config varied 11-32 t/s); `--allow-low-power` or
+`MSE_LLM_ALLOW_LOW_POWER=1` runs anyway. `--dry-run` never stops. `--resume` skips variants that already have an `ok` result for the same build. Exit code 1 if a job failed,
 2 if the guard stopped one.
 
 `--fit` only adjusts what you did not set: with `-ngl all` (always passed by `serve`) or `-ncmoe`, llama.cpp

@@ -24,9 +24,35 @@ BENCH_QUIET = re.compile(r"Error loading tokenizer|private repository|Repository
 _ICON = {"ok": "[green]✓[/]", "skipped": "[yellow]–[/]", "aborted": "[red]■[/]", "failed": "[red]✗[/]"}
 
 
+allow_low_power_option = click.option(
+    "--allow-low-power", is_flag=True,
+    help="Run on battery or under a quiet / power-saving plan anyway (results are slower and vary run to run; "
+         "env MSE_LLM_ALLOW_LOW_POWER=1 does the same).")
+
+
+def power_gate(allow: bool) -> None:
+    """Stop before any benchmark when the numbers would be useless: on battery or under a quiet / power-saving
+    plan (measured: gemma QAT TG 6-36 t/s for one config under Legion Quiet Mode)."""
+    import os
+
+    from mse_llm import hw
+
+    why = hw.bench_power_problem()
+    if not why:
+        return
+    if allow or os.environ.get(hw.ALLOW_LOW_POWER_ENV, "").strip() not in ("", "0"):
+        console.print(f"[yellow]![/] {escape(why)}: running anyway (--allow-low-power); results are not "
+                      "comparable with runs under a performance plan")
+        return
+    raise click.ClickException(
+        f"{why}: benchmark results would be slower and vary run to run. Plug in AC / switch to a performance "
+        "plan (Lenovo Vantage or Fn+Q on a Legion; `powercfg /list`), or pass --allow-low-power.")
+
+
 def _run_options(f):
     for opt in reversed([
         click.option("--no-fit-check", is_flag=True, help="Don't run llama-fit-params before each job."),
+        allow_low_power_option,
         click.option("--force", is_flag=True,
                      help="Start jobs the fit check says don't fit (and sweep entries with status skip)."),
         click.option("--output", type=click.Choice(["all", "filter", "none"]), default=None,
@@ -42,7 +68,8 @@ def _run_options(f):
     return f
 
 
-def _opts(ctx: Ctx, *, no_fit_check, force, output, no_save, no_monitor, no_guard, mem_cap, port=None):
+def _opts(ctx: Ctx, *, no_fit_check, force, output, no_save, no_monitor, no_guard, mem_cap, port=None,
+          allow_low_power=False):
     from mse_llm.bench import RunOpts
     from mse_llm.proc import OutputFilter
 
@@ -55,7 +82,8 @@ def _opts(ctx: Ctx, *, no_fit_check, force, output, no_save, no_monitor, no_guar
 
     return RunOpts(fit_check=not no_fit_check, force=force, monitor=not no_monitor, guard=not no_guard,
                    mem_cap_mib=mem_cap if mem_cap is not None else ctx.cfg.monitor.job_memory_cap_mib, port=port,
-                   write=not no_save, sink=sink, say=lambda s: console.print("  " + s))
+                   write=not no_save, sink=sink, say=lambda s: console.print("  " + s),
+                   allow_low_power=allow_low_power)
 
 
 def _fmt(x, nd: int = 1) -> str:
@@ -144,6 +172,7 @@ def _execute(ctx: Ctx, planned, opts, title: str, dry_run: bool) -> None:
     _print_plan(planned)
     if not todo:
         return
+    power_gate(opts.allow_low_power)
     try:
         results = asyncio.run(_run_planned(ctx, planned, opts, title))
     except KeyboardInterrupt:

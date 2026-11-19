@@ -74,6 +74,7 @@ class RunOpts:
     say: Say = lambda s: None              # status lines (rich markup)
     samplers: list[Any] | None = None      # tests: scripted monitor samplers
     fit_runner: Callable[..., Any] | None = None   # tests: replaces sv.fit_check
+    allow_low_power: bool = False          # CLI: run on battery / a quiet plan (power_gate)
 
 
 @dataclass

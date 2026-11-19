@@ -127,6 +127,22 @@ What has been decided, checked or changed so far. The sections below have the de
 * The bash sweeps are data now: `[sweeps.*]` in the config, generated from the script's `extras_list` arrays,
   commented-out entries as `status = "off"`, "PC freeze" ones as `status = "skip"` (only with `--force`).
 
+**Found while implementing M9 (2026-11-19)** (details in `docs/PARITY.md`, milestone log)
+* The roofline needs **per-model** calibration: how fast the CPU runs a model's experts depends on its quant types
+  (gemma QAT `Q4_0` vs Qwen `Q4_K`), so each model's own runs fit its terms on top of the PC-wide fit.
+* **The Windows / vendor power plan matters as much as the build.** Under "Legion Quiet Mode" (on AC) gemma QAT TG
+  varied 11-32 t/s for one config and PP was ~3× below the bash-era numbers. Runs now record the plan, `hw` /
+  `doctor` warn on a quiet / power-saving plan, and calibration uses only runs of the current plan. `bench`,
+  `benchy`, `sweep run` and `sweep search` stop on battery or a quiet plan (`--allow-low-power` to run anyway).
+
+**M9 acceptance: still to do (needs a performance power plan; the quiet-plan runs don't count)**
+- [ ] `uv run mse-llm sweep search gemma_4_26B_A4b_QAT_UD_Q4_K_XL`: winner found, no run spilled
+- [ ] `uv run mse-llm sweep search Qwen36_35B_A3B_UD_Q4_K_M_MTP`: winner found, no run spilled
+- [ ] `uv run mse-llm results calibrate`: TG and PP leave-one-out within ~15 % for both models
+- [ ] gemma QAT on `--engine cuda_flash` vs `cuda_flash-without-zen4-avx512x`: is build ffc87c3a7 itself slower
+  than ad1b88ca0 (bash era: QAT moe31 TG 27.4 / PP 923)?
+- [ ] Results into `docs/PARITY.md` and the M9 row below; drop "Acceptance pending"
+
 **Later**
 * Strata as a second engine (managed mode, `/v1/models` probe, API key, `/metrics`), compared with
   a fair protocol (§7). PC capability detection modelled on Strata's (§5.1).
@@ -1896,7 +1912,7 @@ come first:
 | **M6** | `monitor/` (NVML, PDH, psutil) + memory guard + **freeze prevention** (§9 item 7: live spill / RAM / commit stop with the guard rules of §5, optional Job Object cap) + notify | Peaks match the bash monitor within tolerance; a forced over-commit run is stopped before the laptop stalls |
 | **M7** | `bench` (llama-bench jsonl) + `benchy` (json) + results store in `results/` + `sweep run --resume` | Old sweeps from the script run from TOML; results JSON written. As built: all 9 bash group functions are `[sweeps.*]` (161 entries, comments as status / note / tag), `sweep list/show/run`, `results list/show`, fit pre-check per job, guard rule D (hang) |
 | **M8** | `report chart` (parity 5-axis + legacy log import), `report table`, `report prompt` | Chart from new results matches the old chart for the same data; old `.txt` logs still chart. As built: pixel-identical PNG to the bash plotter on the same log; old `.txt` logs and the `_RESULTS/*.html` pages chart; plus `results compare` / `results export --csv` |
-| **M9** | §4.6 `predict` (GGUF expert sizes, `llama-fit-params` grid, roofline TG/PP, calibration from M7 runs) + §9 item 6 `sweep search` (safe side first, stops at the first spill, winner one step back) | After calibration, predicted TG/PP are within ~15 % of measured for 2 models; `sweep search` finds a sweet spot without a single run that spills |
+| **M9** | §4.6 `predict` (GGUF expert sizes, `llama-fit-params` grid, roofline TG/PP, calibration from M7 runs) + §9 item 6 `sweep search` (safe side first, stops at the first spill, winner one step back) | After calibration, predicted TG/PP are within ~15 % of measured for 2 models; `sweep search` finds a sweet spot without a single run that spills. As built: `predict`, `results calibrate` (leave-one-out error), `sweep search` (ncmoe / ub stages; K/V and spec stages wait for M10); gemma QAT search: 7 runs, no spill. **Acceptance pending:** the runs were under the Legion Quiet power plan (TG varied 11-32 t/s for one config), re-run under a performance plan |
 | **M10** | §4.5: `quality kld-ref/kld/floor` (llama-perplexity, size preview, wikitext-2 + code corpus, reference fallbacks); `--metrics` on bench servers + `/metrics` delta scraping, spec log parsing, `RunResult.quality` / `.spec` | KLD table for 3 K/V variants of one model, with noise floor; a `sd{2,3,4}mtp` benchy sweep shows acceptance rate + per-position acceptance next to TG |
 | **M11** | MoE-cache axes (§4.4): `cmoe/mc/cs/lm*/Kf8` tokens, staged sweeps, server-log cache stats, `tune moe-cache` wrapper | Stage 0–2 sweep for Qwen36 MTP completes; chart shows TG/PP/duration/VRAM/hit rate per variant |
 | **M12** | `eval` (inspect-ai: mmlu_pro, gpqa_diamond, math_aime_24 locally); `eval --remote-client` + `eval import` for SWE-bench from a Linux VM/host (§7.1) | mmlu_pro `--limit 20` completes against background server; a VirtualBox Linux VM reaches the Windows server (`curl /v1/models`), runs a few SWE-bench (Lite/mini) tasks, and `eval import` joins the result with server metrics |

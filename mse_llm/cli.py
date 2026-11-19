@@ -73,7 +73,7 @@ class SectionedGroup(click.Group):
     SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("Inference", ("serve", "presets", "fit")),
         ("Benchmark", ("bench", "benchy", "eval")),
-        ("System", ("doctor", "hw", "help")),
+        ("System", ("doctor", "hw", "monitor", "notify", "help")),
         ("Config", ("models", "variants")),
         ("Build", ("build",)),
     )
@@ -99,12 +99,15 @@ class SectionedGroup(click.Group):
               help="Config TOML (default: config/config.toml, else config/config.example.toml).")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 @click.option("-v", "--verbose", is_flag=True)
+@click.option("--no-notify", is_flag=True, help="No voice message at the end of a run (MSE_LLM_NO_NOTIFY=1).")
 @click.option("--hw-fixture", type=click.Path(exists=True, dir_okay=False),
               help="Use a HardwareInfo JSON instead of probing (tests/CI). Same as MSE_LLM_TEST_HARDWARE.")
 @click.version_option(__version__, prog_name="mse-llm")
 @click.pass_context
-def main(ctx: click.Context, config, as_json, verbose, hw_fixture) -> None:
+def main(ctx: click.Context, config, as_json, verbose, no_notify, hw_fixture) -> None:
     """Benchmark, tune and serve local LLMs (llama.cpp)."""
+    if no_notify:
+        os.environ["MSE_LLM_NO_NOTIFY"] = "1"
     if hw_fixture:
         os.environ["MSE_LLM_TEST_HARDWARE"] = str(Path(hw_fixture).resolve())
     ctx.obj = Ctx(config, as_json, verbose)
@@ -1235,6 +1238,7 @@ def _print_fit(rep) -> None:
     console.print(f"[dim]{legend}[/]")
 
 
+from mse_llm import cli_monitor as _cli_monitor  # noqa: E402,F401  (registers monitor + notify)
 from mse_llm import cli_serve as _cli_serve  # noqa: E402,F401  (registers serve + presets)
 
 if __name__ == "__main__":

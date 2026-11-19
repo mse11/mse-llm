@@ -29,6 +29,20 @@ version = "llama-benchy"        # pin, e.g. "llama-benchy==0.3.1", for reproduci
 # [engines.cuda_flash]
 # help_snapshot = "a49db739f"   # folder in tests/fixtures/help/ that `doctor flags` and command checks use
 
+[monitor]                   # §5 / §9 item 7: in-process sampling (NVML, PDH, psutil) + memory guard
+interval = 0.5              # seconds (bash: ~2 s per sample, with powershell + nvidia-smi calls)
+guard = true                # stop the server on a GPU memory spill, RAM or commit trip (serve / presets serve)
+spill_stop_mib = 100        # bash "shared delta > 100 MiB"; here counted after the host buffers fit expects
+vram_full_mib = 256         # dedicated VRAM counts as full below this much free
+host_tolerance_pct = 2.0    # allowed error of fit's host-buffer size (measured: 0.5 %)
+ram_stop_pct = 95.0
+commit_stop_pct = 95.0
+# job_memory_cap_mib = 40000  # Windows Job Object cap on the server tree's commit; on WDDM VRAM counts too
+ram_warn_pct = 60.0         # bash status thresholds
+ram_fail_pct = 80.0
+temp_warn_c = 75.0
+temp_fail_c = 85.0
+
 [hw.checks]
 ram_warn_gb = 16
 ram_pass_gb = 32

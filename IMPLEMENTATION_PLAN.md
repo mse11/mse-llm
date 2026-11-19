@@ -86,8 +86,11 @@ What has been decided, checked or changed so far. The sections below have the de
 
 **Answers from the review of the open questions**
 * **turbo2/3/4 KV cache types: dropped.** Not in upstream llama.cpp; no fork profile.
-* **`serve` uses `--fit on`** so a bad config isn't run slowly. The `fit` pre-check warns first and
-  shows what `--fit` would change. Benchmarks keep `--fit off` (§0.3).
+* **`serve` uses `--fit on`**, but (found in M5) llama.cpp's `--fit` only adjusts what the user did not
+  set: with `-ngl all` or `-ncmoe` it aborts and the server starts with exactly the requested settings.
+  So the `fit` pre-check is what protects you: it warns, says so, and shows what `--fit` would pick with
+  both left unset (`serve --let-fit`). The live memory guard (§5) stops a spill. Benchmarks keep
+  `--fit off` (§0.3).
 * **SWE-bench:** Docker doesn't run on this Windows 11 laptop, so the model server runs on Windows and
   SWE-bench + Docker run on Linux (VirtualBox VM: host at `10.0.2.2` with NAT or `192.168.56.1`
   host-only; or another machine), with an API key and a firewall rule for the port (§7.1).
@@ -95,6 +98,20 @@ What has been decided, checked or changed so far. The sections below have the de
 * **llama.cpp checkout: a new clone in `builds/llama.cpp`** (vcpkg fresh in `builds/vcpkg`), used
   by mse-llm **and** the bash script (`MSE_LLAMA_BIN_DIR`). No other checkout is referenced (§11 Q5).
 * No open questions remain in §11.
+
+**Found while implementing M5 + M6 (2026-11-19)** (details in `docs/PARITY.md`, milestone log)
+* `--fit on` can't shrink a `serve` config (`-ngl all` / `-ncmoe` set): see §0.3; `serve --let-fit` leaves both
+  out so `--fit` decides the placement.
+* **The bash spill rule is wrong for MoE offload.** llama.cpp's pinned host buffers for CPU experts count as
+  shared GPU memory (+15.9 GB for a fitting Qwen3.6-28B `moe41`, equal to `fit`'s host part), so "shared delta >
+  100 MiB = spill" fires on every `-ncmoe` run. A real spill fills dedicated VRAM first and then keeps growing the
+  server's shared memory; the guard uses that (§5).
+* Shared memory is read per server process on the NVIDIA adapter; the adapter-wide sum would include the AMD
+  iGPU (§5). NVML has no per-process VRAM on Windows (WDDM); PDH gives it.
+* The bash monitor samples RAM only once (bug), so its "Peak RAM" is the start value.
+* A Windows Job Object memory cap also counts VRAM allocations (WDDM), so it must cover VRAM + host + RAM.
+* Graceful stop on Windows is CTRL_BREAK to the server's own process group; attached servers sit in a
+  kill-on-close Job Object (no orphans even if mse-llm is killed); background routers are stopped by PID.
 
 **Later**
 * Strata as a second engine (managed mode, `/v1/models` probe, API key, `/metrics`), compared with
@@ -142,16 +159,23 @@ running the flags against the binaries.
   measured config can silently differ from the requested one. `-fitt/--fit-target MiB`, `-fitc`.
   `llama-bench` has `-fitt/-fitc` (off by default). **Decided:**
   * **bench / benchy / sweep / quality:** `--fit off`, so the measured config is exactly the requested one.
-  * **serve / presets serve:** `--fit on`, so a too-large config is shrunk instead of running slowly
-    or spilling. Before starting, `serve` runs the `fit` check (§4.6) and **warns** instead of
-    silently adjusting:
-    * `NO-FIT` / `TIGHT` / `UNSURE` for the requested settings, with the numbers;
+  * **serve / presets serve:** `--fit on`. Before starting, `serve` runs the `fit` check (§4.6) and
+    **warns** instead of silently adjusting:
+    * `NO-FIT` / `TIGHT` / `UNSURE` for the requested settings, with the numbers, plus the
+      `fit --suggest` answer (lowest `-ncmoe` that fits);
     * **what llama.cpp's `--fit` would change**: `llama-fit-params` without `--fit off` prints
       the fitted command line, which is diffed against the requested one (for example
-      `-c 65536 → 32768` or "experts of layers 0–35 moved to CPU");
+      `-ngl all → 42` or "experts of layers 15–40 on the CPU");
     * then it asks before starting (`--yes` skips the question). After start, `serve` compares the
       server log's real `n_ctx` / offload with the request and repeats the warning if `--fit`
       changed anything.
+  * **Checked in M5: `--fit` only adjusts arguments the user did not set.** `serve` always passes
+    `-ngl all` and `-c`, and most variants `-ncmoe`. With `-ngl` set llama.cpp aborts the fit
+    ("n_gpu_layers already set by user"), with `-ncmoe` too ("tensor_buft_overrides already set by
+    user"), and the server starts with exactly the requested, too-large settings. So `--fit on`
+    does **not** shrink a `serve` config. The pre-check says so and shows what `--fit` would pick
+    with `-ngl` and `-ncmoe` left unset; **`serve --let-fit`** runs exactly that. A spill that
+    happens anyway is stopped by the memory guard (§5).
 * **MoE**: `-cmoe`, `-ncmoe N`, **`--moe-cache-mib N`**, **`--moe-cache-cpu-share F`**,
   `-ncffn N` (dense FFN to CPU). The MoE cache is the main new sweep axis next to `n-cpu-moe`; see §4.4.
 * **Speculative**: `--spec-type` now lists `draft-simple, draft-eagle3, draft-mtp, draft-dflash,
@@ -707,6 +731,15 @@ Windows / SIGTERM) → wait → `psutil` kill of the whole process tree → **ve
 before the next run. This replaces `server_stop_windows`, `server_get_pid_by_ppid`, `tasklist`
 loops, and `/tmp` logs.
 
+As built (M5): the server runs in its own process group (CREATE_NEW_PROCESS_GROUP), so Ctrl+C reaches
+only mse-llm, which stops the tree itself. CTRL_BREAK is the only console signal that can be sent to
+another group; llama-server handles just Ctrl+C, so CTRL_BREAK ends it through the default handler at
+once (~0.7 s, no kill needed). An attached server is also in a **kill-on-close Job Object**: if mse-llm
+dies, Windows ends the server and every router child with it. A `--background` router (must outlive
+mse-llm) gets a hidden console instead and is stopped by PID from `results/servers/router-<port>.json`
+(create time checked, so a reused PID is never killed). A killed process holding ~20 GB (a model loaded
+with `-lm none`) needs ~8 s to end, so the stop waits up to 20 s after the kill.
+
 Engine profiles (what `BENCHES`/`SERVERS`/`SERVERS_NET_CFG` are today). Each build profile's
 `[engine]` table (§0.4) declares one, and `build run` updates its `bin_dir`. It points at the
 repo's own build, the same folder as the bash script's `MSE_LLAMA_BIN_DIR`:
@@ -880,12 +913,14 @@ Result: 2 errors, 4 warnings.  `mse-llm presets fix` shows the corrections.
 * **Foreground** (default, like the script): streams router and child logs with the same filter
   as `serve --output filter`. Ctrl+C stops the router **and all children**.
 * **Background**: uses the same `ServerHandle` as benches (§3.3). It waits for `/health`, then
-  for every `--load NAME` to reach `loaded` (via `/models/sse`), prints the endpoint and returns.
+  for every `--load NAME` to reach `loaded` (by polling `GET /models`; `presets watch` follows
+  `/models/sse`), prints the endpoint and returns.
   `presets stop` ends it. The PID file and logs go under `results/servers/`.
 * Before starting, it checks the port is free and no other engine is running (§5.1), and checks
   free VRAM against `memory_margin_mib`.
-* Monitoring (§5) follows the **router's whole process tree**, so each child model's VRAM is
-  attributed via NVML per-process data. `presets status` also shows the router's own
+* Monitoring (§5) follows the **router's whole process tree** (foreground mode), so each child
+  model's VRAM and shared memory is attributed via the PDH per-process counters (NVML has no
+  per-process VRAM on Windows WDDM). `presets status` also shows the router's own
   `memory.min/max/effective` per model.
 
 **Things the router does differently from single-model `serve`** (shown by `presets dump` and
@@ -895,7 +930,8 @@ Result: 2 errors, 4 warnings.  `mse-llm presets fix` shows the corrections.
   the router log lists `aliases: …` per preset.
 * The router instances run with `--fit on` unless the preset sets `fit = off`. A preset that
   pins `ctx-size` (all of yours do) keeps that context. Without it, `--fit` would pick the largest
-  context that fits at load time.
+  context that fits at load time. As with `serve` (§0.3), a preset that sets `ngl` or `n-cpu-moe`
+  (all of yours do) leaves `--fit` nothing to adjust.
 * `mmproj` (vision) memory is **not** counted by the router's memory check, so for Gemma 4 keep
   extra margin or set `memory_margin_mib` higher.
 * Precedence: command line > model section > `[*]`.
@@ -1417,20 +1453,36 @@ loop (blocking NVML/PDH calls go through `asyncio.to_thread`).
 | Metric | Source (no shell-outs) |
 |---|---|
 | Dedicated VRAM used, total | NVML `nvmlDeviceGetMemoryInfo` |
-| **Per-process VRAM** of the server | NVML `nvmlDeviceGetComputeRunningProcesses` (isolates the model from browser/desktop usage) |
-| Shared / non-local GPU memory (Windows spill) | PDH `\GPU Adapter Memory(*)\Shared Usage` + `\GPU Process Memory(pid_*)\Shared Usage` via `win32pdh` |
+| **Per-process VRAM** of the server | PDH `\GPU Process Memory(pid_*)\Dedicated Usage` on Windows (NVML `nvmlDeviceGetComputeRunningProcesses` reports no per-process memory under WDDM; used elsewhere) |
+| Shared GPU memory (Windows spill) | PDH `\GPU Process Memory(pid_<server tree>_<NVIDIA luid>)\Shared Usage` (the server's own), `\GPU Adapter Memory(<NVIDIA luid>)\Shared Usage` (the GPU), via `win32pdh` with open queries. Not the sum over all adapters: that adds the AMD iGPU's normal shared memory (1.1 GB here) |
+| Bash "shared" number (for comparison) | PDH sum of `\GPU Non Local Adapter Memory(*)\Non Local Usage` (= the script's `GPUNonLocalAdapterMemory.NonLocalUsage`) |
 | GPU temp, power, SM/mem clocks, util, **throttle reasons** | NVML |
 | System RAM, swap/pagefile, commit | psutil |
 | Server RSS / private bytes | psutil on the server PID tree |
 | PCIe TX/RX | NVML `nvmlDeviceGetPcieThroughput` (useful for `n-cpu-moe` / `moe-cache` analysis) |
 
-Output: baseline, peak, mean, p95, delta; the same status thresholds as bash (shared delta > 100 MiB =
-spill; RAM > 60/80 %; temp > 75/85 °C); and the raw timeseries saved as Parquet/CSV next to the result.
+Output: baseline, peak, mean, p95, delta; the bash status thresholds for RAM (> 60/80 %) and temperature
+(> 75/85 °C); and the raw timeseries saved as CSV next to the result (no Parquet: it would need pandas).
 
-**Safety guard (new).** Your notes show several configs freezing the PC. The monitor can **abort
-the run** when RAM > N % or commit charge or pagefile growth passes a threshold. It kills the server
-tree, marks the result `aborted: memory_guard`, and moves to the next variant. A sweep can also use
-`llama-fit-params` or a short `--fit on` dry probe to predict OOM and skip known-bad configs.
+**Spill status (changed from bash, M6).** The bash rule "shared delta > 100 MiB = offloaded to system RAM"
+is wrong for MoE offload: llama.cpp's **pinned host buffers** for the experts `-ncmoe` keeps on the CPU
+count as shared GPU memory. Measured: a fitting Qwen3.6-28B `moe41` shows +15892 MiB shared, and `fit`
+predicts 15807 MiB of host buffers (0.5 % off); the bash function printed "Performance hit detected"
+for it. A real spill (Qwen3.6-35B `moe10`, 17.2 GB on 11.4 GB free) looks different: dedicated VRAM
+fills up first (12140 / 12282 MiB), then the server's shared memory keeps growing. So the status
+compares the server's shared memory with the host buffers `fit` expects when that is known, and
+otherwise explains the bash rule instead of calling it a spill.
+
+**Safety guard.** Your notes show several configs freezing the PC. The monitor **stops the run live**
+(it kills the server tree, the result is `aborted: memory_guard`, a sweep moves to the next variant,
+`serve` exits with code 2) when:
+* **A.** dedicated VRAM is full (free <= 256 MiB) and the server's shared memory grows by more than
+  100 MiB after that, or
+* **B.** the server's shared memory exceeds the host buffers `fit` expects by more than max(100 MiB, 2 %), or
+* **C.** system RAM > 95 % or the commit charge > 95 % of the limit.
+Checked in M6: the `moe10` over-commit was stopped 8 s after start with 586 MiB spilled; without the
+guard it reached 9 GB of shared memory in 60 s. A sweep can also use `llama-fit-params` to predict OOM
+and skip known-bad configs (§4.6). Thresholds live in `[monitor]`.
 
 ### 5.1 PC capability detection (`mse-llm hw`), modelled on Strata
 
@@ -1626,7 +1678,7 @@ work is split:
 mse-llm eval MODEL swe_bench_verified -v VARIANT --remote-client [--bind lan|vbox-hostonly|IP] [--api-key auto]
 ```
 
-1. Starts `llama-server` like `serve` (fit pre-check, `--fit on`, monitoring), but bound so the
+1. Starts `llama-server` like `serve` (fit pre-check, `--fit on`, monitoring + guard), but bound so the
    Linux side can reach it, and **with an API key**, because it's no longer localhost-only:
    * VirtualBox VM with **NAT**: the VM reaches the host at `10.0.2.2:8033`. The server must listen
      on `0.0.0.0` (or the host's VirtualBox adapter);
@@ -1678,7 +1730,7 @@ mean_accept_len, accepted_per_pos[]} (§4.5), status (ok|failed|aborted|skipped)
   ├── reports/<sweep>/*.png|*.html     # tracked: charts and HTML reports (regenerable, small)
   ├── tune/<run_id>/recommendation.json  # tracked: moe-cache-tune result
   ├── tune/<run_id>/runs/              # local: tuner calibration runs + routing traces (large)
-  ├── raw/<run_id>/                    # local: monitor timeseries (parquet/csv), full server/client logs
+  ├── raw/<run_id>/                    # local: monitor timeseries (csv), full server/client logs
   └── servers/                         # local: PID files and state of --background servers
   ```
 
@@ -1742,9 +1794,13 @@ mean_accept_len, accepted_per_pos[]} (§4.5), status (ok|failed|aborted|skipped)
        folder. `doctor` confirms this after the first build in a new folder.
      * Effect: configs that used to "run very slowly" or freeze now stop with a CUDA out-of-memory
        error. For `sweep search` that error marks the edge.
-   * Optional Windows Job Object memory cap on the server process, so it can't push the system into swap.
-   * The monitor stops a run as soon as shared GPU memory grows by more than 100 MiB, instead of
-     reporting it afterwards.
+   * Optional Windows Job Object memory cap on the server process tree (`--mem-cap`, off by default),
+     so it can't push the system into swap. Found in M6: under WDDM, **VRAM allocations count against
+     the cap too** (a 2000 MiB cap made OmniCoder's 5 GB `cudaMalloc` fail), so the cap must cover
+     VRAM + host buffers + RAM.
+   * The monitor stops a run live on a GPU memory spill instead of reporting it afterwards. Not with
+     the bash rule "shared memory grew by more than 100 MiB" (pinned `-ncmoe` host buffers count as
+     shared memory), but with the guard rules A-C of §5.
 8. **Port management**: pick a free port automatically for background servers, so a forgotten
    foreground server on 8033 can't collide with a benchy run.
 9. **Notifications**: TTS plus optional desktop toast or ntfy/webhook for long sweeps.
@@ -1795,7 +1851,7 @@ come first:
 | **M3** | `variants.py` codec + matrix (incl. legacy `extra_` names; turbo* → "dropped" error); llama.cpp command builders; flag validation against help snapshots; golden tests vs bash command lines | Every bash `run_*` function has an equivalent `--dry-run` with identical argv (minus fixed bugs) |
 | **M4** | `mse-llm fit` (§4.6): GGUF/model + variants (`-v`, brace patterns, pasted bash arrays with comments) + `--ctx` → `llama-fit-params --fit-print` per variant, per-part breakdown with source (measured / estimated / NOT COUNTED) for drafter + mmproj, verdicts `fits` / `fits~` / `UNSURE`, `--strict`, `--suggest` | Pasting the Qwen28-REAP `extras_list` reproduces the §4.6 table; an `sdNmtp` variant without a configured drafter shows `UNSURE`; `--suggest` proposes the lower `-ncmoe` |
 | **M5** | `proc.py` + `ServerHandle` (async spawn, readiness, tree kill, port-free check); `serve` (+ `--preset`, `--fit on` with the `fit` pre-check warning, §0.3); `presets *` (§4.3) | Server starts/stops cleanly 50× in a loop on Windows with no orphan processes; `serve` warns before a bad fit and shows what `--fit` would change; `presets serve` + `presets load` switch between two models through one endpoint |
-| **M6** | `monitor/` (NVML, PDH, psutil) + memory guard + **freeze prevention** (§9 item 7: live shared-memory stop, optional Job Object cap) + notify | Peaks match the bash monitor within tolerance; a forced over-commit run is stopped before the laptop stalls |
+| **M6** | `monitor/` (NVML, PDH, psutil) + memory guard + **freeze prevention** (§9 item 7: live spill / RAM / commit stop with the guard rules of §5, optional Job Object cap) + notify | Peaks match the bash monitor within tolerance; a forced over-commit run is stopped before the laptop stalls |
 | **M7** | `bench` (llama-bench jsonl) + `benchy` (json) + results store in `results/` + `sweep run --resume` | Old sweeps from the script run from TOML; results JSON written |
 | **M8** | `report chart` (parity 5-axis + legacy log import), `report table`, `report prompt` | Chart from new results matches the old chart for the same data; old `.txt` logs still chart |
 | **M9** | §4.6 `predict` (GGUF expert sizes, `llama-fit-params` grid, roofline TG/PP, calibration from M7 runs) + §9 item 6 `sweep search` (safe side first, stops at the first spill, winner one step back) | After calibration, predicted TG/PP are within ~15 % of measured for 2 models; `sweep search` finds a sweet spot without a single run that spills |
@@ -1857,7 +1913,8 @@ both are committed first (M0). After that the deleted script stays recoverable f
 
 If one feature is intentionally dropped, the parity table records "dropped + reason" instead of ✓.
 Already approved: the **turbo2/3/4 cache variants** (`*_Kt*`, `*_Vt*`): dropped, not supported by
-upstream llama.cpp (2026-11-18). Dropped items
+upstream llama.cpp (2026-11-18); the **`MSE_PS_DEBUG`** knob: dropped, it only printed `ps aux` around the
+bash PID handling, which `ServerHandle` replaced (2026-11-19). Dropped items
 need your explicit OK before the script is deleted.
 
 ---
@@ -1869,9 +1926,11 @@ need your explicit OK before the script is deleted.
    read from or written to `_MSE_doc\AI\MODELS\app_llamacpp\` (that folder is being removed).
    `results/` is **tracked in git**. Which files get committed, and how, is your decision later;
    the tool only writes them (§8).
-3. ~~Default `--fit` for serve~~ **Decided:** `serve` uses `--fit on` (no slow spill), and the `fit`
+3. ~~Default `--fit` for serve~~ **Decided:** `serve` uses `--fit on`, and the `fit`
    pre-check **warns** about a bad fit and shows what `--fit` would change before starting.
-   Bench/benchy/sweep/quality use `--fit off` (§0.3).
+   Bench/benchy/sweep/quality use `--fit off` (§0.3). **Update (M5):** `--fit` can't shrink the
+   settings `serve` passes (`-ngl all`, `-ncmoe`); the pre-check says so, `serve --let-fit` lets
+   `--fit` place the layers, and the memory guard (§5) stops a spill.
 4. ~~Docker check for SWE-bench~~ **Decided:** Docker doesn't run on this Windows 11 laptop
    (VirtualBox). The model server runs on Windows, and SWE-bench + Docker run on Linux (a VirtualBox
    VM or another machine) against that endpoint: `eval --remote-client` + `eval import` (§7.1).

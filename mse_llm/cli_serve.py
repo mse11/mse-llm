@@ -6,6 +6,7 @@ import asyncio
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import click
@@ -76,12 +77,14 @@ def _prestart_checks(port: int) -> None:
     from mse_llm import serve as sv
 
     if pr.port_in_use(port):
-        raise click.ClickException(pr.describe_port(port) + " (`mse-llm presets stop`, `mse-llm hw processes --stop`, "
-                                   "or another --port)")
+        raise click.ClickException(pr.describe_port(port) + " (`mse-llm presets stop`, "
+                                   "`mse-llm hw processes --stop-ollama`, or another --port)")
     others = sv.other_engines()
     if others:
+        hint = ("`mse-llm hw processes --stop-ollama` ends Ollama"
+                if any(o.lower().startswith("ollama") for o in others) else "stop them before benching")
         console.print(f"[yellow]![/] other inference engines are running: {escape(', '.join(others))} "
-                      "(they hold VRAM; `mse-llm hw processes --stop` ends them)")
+                      f"(they hold VRAM; {hint})")
 
 
 def _print_stop(rep) -> None:
@@ -92,6 +95,19 @@ def _print_stop(rep) -> None:
 
 
 # ---------------------------------------------------------------- serve
+
+def _monitor_options(f):
+    for opt in reversed([
+        click.option("--no-monitor", is_flag=True, help="No VRAM / shared memory / RAM monitoring."),
+        click.option("--no-guard", is_flag=True,
+                     help="Monitor, but don't stop the server on a spill / RAM / commit trip."),
+        click.option("--mem-cap", type=int, default=None, metavar="MiB",
+                     help="Windows Job Object cap on the server tree's committed memory "
+                          "(default: [monitor].job_memory_cap_mib)."),
+    ]):
+        f = opt(f)
+    return f
+
 
 def _print_fit_check(chk) -> None:
     from mse_llm.serve import BAD_VERDICTS
@@ -169,6 +185,54 @@ def _preset_server_command(ctx: Ctx, name: str, file_, engine, ctx_, port):
     return cmd, d, merged
 
 
+def _serve_list(ctx: Ctx, file_, engine) -> None:
+    """Models from [models.*] and sections of the presets INI, each with the command that serves it."""
+    from mse_llm import presets as ps
+
+    models = []
+    for key, m in ctx.cfg.models.items():
+        models.append({"name": key, "alias": m.alias, "file": Path(m.path).name, "found": Path(m.path).is_file(),
+                       "ctx": m.ctx, "default_serve": m.default_serve, "default_serve_spec": m.default_serve_spec,
+                       "tags": m.tags, "command": f"mse-llm serve {key}" if m.default_serve else None,
+                       "command_spec": f"mse-llm serve {key} --spec" if m.default_serve_spec else None})
+    path = Path(file_) if file_ else ctx.cfg.presets.path()
+    presets = []
+    if path.is_file():
+        _, _, _, helps = _engine(ctx, engine or ctx.cfg.presets.engine)
+        pf = ps.parse(path)
+        for s in pf.models:
+            d = ps.dump(pf, s.name, helps.get("llama-server"), ctx.cfg)
+            presets.append({"name": s.name, "ctx": d.ctx, "variant": d.variant, "model_key": d.model_key,
+                            "found": bool(d.model_path) and Path(d.model_path).is_file(),
+                            "command": f"mse-llm serve --preset {s.name}"})
+    if ctx.json:
+        click.echo(json.dumps({"models": models, "presets_file": str(path), "presets": presets}, indent=2))
+        return
+    ok = "[green]✓[/]"
+    bad = "[red]✗ file missing[/]"
+    t = Table(box=None, pad_edge=False, header_style="bold", title="models   →  mse-llm serve NAME [--spec]",
+              title_justify="left", title_style="bold")
+    for c in ("NAME", "CTX", "default_serve", "--spec", "TAGS", ""):
+        t.add_column(c, overflow="fold")
+    for r in models:
+        t.add_row(escape(r["name"]), str(r["ctx"] or "-"), escape(r["default_serve"] or "-"),
+                  escape(r["default_serve_spec"] or "-"), escape(",".join(r["tags"])), ok if r["found"] else bad)
+    console.print(t)
+    if presets:
+        console.print()
+        title = f"presets in {path.name}   →  mse-llm serve --preset NAME   (all of them: mse-llm presets serve)"
+        t = Table(box=None, pad_edge=False, header_style="bold", title_justify="left", title_style="bold",
+                  title=title)
+        for c in ("NAME", "CTX", "VARIANT ≈", "CONFIG MODEL", ""):
+            t.add_column(c, overflow="fold")
+        for r in presets:
+            t.add_row(escape(r["name"]), str(r["ctx"] or "-"), escape(r["variant"]), escape(r["model_key"] or "-"),
+                      ok if r["found"] else bad)
+        console.print(t)
+    console.print("\n[dim]Other variants: -v VARIANT (`mse-llm variants expand PATTERN`), other context: --ctx N. "
+                  "Check memory first: `mse-llm fit NAME`. Preview: --dry-run.[/]")
+
+
 @main.command("serve")
 @click.argument("model", required=False)
 @click.option("-v", "--variant", "patterns", multiple=True, help="Variant (default: [models].default_serve).")
@@ -186,18 +250,26 @@ def _preset_server_command(ctx: Ctx, name: str, file_, engine, ctx_, port):
               help="Leave -ngl and -ncmoe out, so llama.cpp's --fit decides the GPU/CPU placement.")
 @click.option("--all", "all_", is_flag=True,
               help="Every model with a default_serve (bash run_PRESETS_dump; with --dry-run).")
+@click.option("--list", "list_", is_flag=True,
+              help="What can be served: models and presets, with the command for each.")
+@_monitor_options
 @click.option("--engine", default=None)
 @click.option("--dry-run", is_flag=True,
               help="Print the command (flag-checked) and stop (bash MSE_SERVER_PRESETS_DUMP).")
 @json_option
 @pass_ctx
 def serve_cmd(ctx: Ctx, model, patterns, spec, preset, file_, ctx_, port, output, yes, no_fit_check, let_fit, all_,
-              engine, dry_run) -> None:
-    """llama-server for one model with --fit on, after a fit check (bash run_serve_params / run_SERVER_*)."""
+              list_, no_monitor, no_guard, mem_cap, engine, dry_run) -> None:
+    """llama-server for one model with --fit on, after a fit check (bash run_serve_params / run_SERVER_*).
+
+    Without MODEL (or with --list) it lists what can be served."""
     from mse_llm import serve as sv
     from mse_llm import variants as vv
     from mse_llm.runners import server_command
 
+    if list_ or not (model or preset or all_):
+        _serve_list(ctx, file_, engine)
+        return
     if all_:
         if not dry_run:
             raise click.ClickException("--all lists the commands of every model: use it with --dry-run")
@@ -235,6 +307,7 @@ def serve_cmd(ctx: Ctx, model, patterns, spec, preset, file_, ctx_, port, output
         raise click.ClickException("--json is for --dry-run; a running server streams its log")
     _, eng, _, _ = _engine(ctx, engine)
     the_port = port or eng.port
+    expected_host = None
     if let_fit and not no_fit_check and cmd.ctx:
         with console.status("llama-fit-params --fit on …"):
             path = fit_model if preset else ctx.cfg.model(fit_model)[1].path
@@ -250,11 +323,15 @@ def serve_cmd(ctx: Ctx, model, patterns, spec, preset, file_, ctx_, port, output
             chk = sv.fit_check(ctx.cfg, fit_model, variant, cmd.ctx, engine,
                                draft=merged.get("model-draft") or merged.get("md"), mmproj=merged.get("mmproj"))
         _print_fit_check(chk)
+        if chk.row is not None and not chk.row.error:
+            expected_host = chk.row.host_mib      # pinned host buffers: shared GPU memory that is not a spill
         if chk.bad:
             _need_yes(yes, f"fit check says {chk.verdict}. Start anyway?")
     _prestart_checks(the_port)
     log = sv.servers_dir() / f"serve-{the_port}.log"
-    asyncio_run(_serve(ctx, cmd, eng, the_port, log, _filter(ctx, output)))
+    mon = _MonOpts(not no_monitor and ctx.cfg.defaults.monitor, not no_guard, expected_host,
+                   mem_cap if mem_cap is not None else ctx.cfg.monitor.job_memory_cap_mib)
+    asyncio_run(_serve(ctx, cmd, eng, the_port, log, _filter(ctx, output), mon))
 
 
 def asyncio_run(coro) -> None:
@@ -264,29 +341,89 @@ def asyncio_run(coro) -> None:
         sys.exit(130)
 
 
-async def _serve(ctx: Ctx, cmd, eng, port: int, log: Path, filt) -> None:
+@dataclass
+class _MonOpts:
+    monitor: bool = True
+    guard: bool = True
+    expected_host_mib: float | None = None
+    mem_cap_mib: int | None = None
+
+
+async def _serve(ctx: Ctx, cmd, eng, port: int, log: Path, filt, mon: _MonOpts) -> None:
     from mse_llm import serve as sv
-    from mse_llm.runners import ServerError, ServerHandle
+    from mse_llm.runners import ServerHandle
 
     info = sv.StartupInfo()
     h = ServerHandle(cmd.argv, port=port, client_host=eng.client_host,
                      ready_timeout=ctx.cfg.defaults.server_ready_timeout,
-                     log_path=log, sink=_printer(filt))
+                     log_path=log, sink=_printer(filt), memory_cap_mib=mon.mem_cap_mib)
     h.proc.watchers.append(info.feed)
-    console.print(f"[dim]log: {escape(str(log))}  (Ctrl+C stops the server)[/]")
-    try:
-        try:
-            ep = await h.start()
-        except ServerError as e:
-            _fail(e, log)
+
+    async def ready(ep) -> None:
         console.print(f"[green]✓[/] ready after {ep.ready_s:.1f} s: [bold]{ep.base_url}[/]  pid {ep.pid}")
         for d in info.differences(cmd.ctx):
             console.print(f"[yellow]! --fit changed the config:[/] {escape(d)}")
-        rc = await h.wait()
-        console.print(f"[yellow]server exited with code {rc}[/]")
+
+    await run_server(ctx, h, log, mon, ready, what=cmd.model or cmd.label, hint="Ctrl+C stops the server")
+
+
+async def run_server(ctx: Ctx, h, log: Path, mon: _MonOpts, on_ready, *, what: str, hint: str) -> None:
+    """Foreground server: monitor (baseline before the start), guard stop, stop report, summary, voice message.
+    Exit codes: 1 = the server failed to start, 2 = stopped by the memory guard."""
+    from contextlib import AsyncExitStack
+
+    from mse_llm import notify
+    from mse_llm.cli_monitor import make_monitor, print_summary
+    from mse_llm.runners import ServerError
+
+    async def trip(reason: str) -> None:
+        console.print(f"[red]■ memory guard:[/] {escape(reason)} → stopping the server")
+        _print_stop(await h.stop())
+
+    m = None
+    if mon.monitor:
+        m = make_monitor(ctx, guard=mon.guard, expected_host_mib=mon.expected_host_mib,
+                         csv_path=log.with_name(log.stem + ".monitor.csv"), on_trip=trip)
+    note = "" if m is None else (f"; monitor every {ctx.cfg.monitor.interval:g} s, guard "
+                                 + ("on" if mon.guard and ctx.cfg.monitor.guard else "off"))
+    console.print(f"[dim]log: {escape(str(log))}  ({hint}){note}[/]")
+    failure = None
+    exited = None
+    interrupted = True
+    tripped = None
+    try:
+        async with AsyncExitStack() as stack:
+            if m is not None:
+                await stack.enter_async_context(m)
+                m.track(lambda: h.proc.proc.pid if h.proc.proc is not None else None)
+            try:
+                ep = await h.start()
+            except ServerError as e:
+                failure = e
+            else:
+                if m is not None and m.tripped:      # tripped before the process existed: stop it now
+                    _print_stop(await h.stop())
+                else:
+                    await on_ready(ep)
+                    exited = await h.wait()
+            finally:
+                if h.stop_report is None or h.proc.returncode is None:
+                    _print_stop(await h.stop())
+        interrupted = False
     finally:
-        rep = await h.stop()
-        _print_stop(rep)
+        if m is not None:
+            tripped = m.tripped
+            if m.samples:
+                print_summary(m.summary(), title=f"monitor {what}")
+    if tripped:
+        notify.notify(f"{what}: stopped by the memory guard", ctx.cfg.defaults.notify)
+        raise click.exceptions.Exit(2)
+    if failure is not None:
+        notify.notify(f"{what}: server failed to start", ctx.cfg.defaults.notify)
+        _fail(failure, log)
+    if not interrupted and exited is not None:
+        console.print(f"[yellow]server exited with code {exited}[/]")
+        notify.notify(f"{what}: server exited", ctx.cfg.defaults.notify)
 
 
 def _fail(e, log: Path):
@@ -504,12 +641,13 @@ def _resolve_loads(pf, names) -> list[str]:
 @click.option("--foreground", is_flag=True, help="Stream the log; Ctrl+C stops the router and every model (default).")
 @click.option("--output", type=OUTPUT, default=None, help="Foreground console output (default: [defaults].output).")
 @click.option("--force", is_flag=True, help="Start even when `presets validate` finds errors.")
+@_monitor_options
 @click.option("--engine", default=None)
 @click.option("--dry-run", is_flag=True)
 @json_option
 @pass_ctx
 def presets_serve(ctx: Ctx, file_, port, models_max, memory_margin, no_autoload, loads, background, foreground, output,
-                  force, engine, dry_run) -> None:
+                  force, no_monitor, no_guard, mem_cap, engine, dry_run) -> None:
     """llama-server --models-preset INI (bash run_PRESETS_serve)."""
     from mse_llm import fit as ff
     from mse_llm.runners import presets_serve_command
@@ -553,10 +691,12 @@ def presets_serve(ctx: Ctx, file_, port, models_max, memory_margin, no_autoload,
     free, src = ff.free_vram_now()
     if margin and free is not None and free < margin:
         console.print(f"[yellow]![/] only {free} MiB VRAM free ({src}), less than the {margin} MiB memory margin")
+    cap = mem_cap if mem_cap is not None else ctx.cfg.monitor.job_memory_cap_mib
     if background:
-        asyncio_run(_router_background(ctx, cmd, eng, the_port, path, load))
+        asyncio_run(_router_background(ctx, cmd, eng, the_port, path, load, cap))
     else:
-        asyncio_run(_router_foreground(ctx, cmd, eng, the_port, load, _filter(ctx, output)))
+        mon = _MonOpts(not no_monitor and ctx.cfg.defaults.monitor, not no_guard, None, cap)
+        asyncio_run(_router_foreground(ctx, cmd, eng, the_port, load, _filter(ctx, output), mon))
 
 
 async def _do_loads(root: str, load: list[str]) -> None:
@@ -572,29 +712,24 @@ async def _do_loads(root: str, load: list[str]) -> None:
             console.print(f"  [red]✗ {escape(str(e))}[/]")
 
 
-async def _router_foreground(ctx: Ctx, cmd, eng, port: int, load: list[str], filt) -> None:
+async def _router_foreground(ctx: Ctx, cmd, eng, port: int, load: list[str], filt, mon: _MonOpts) -> None:
     from mse_llm import serve as sv
-    from mse_llm.runners import ServerError, ServerHandle
+    from mse_llm.runners import ServerHandle
 
     log = sv.servers_dir() / f"router-{port}.log"
     h = ServerHandle(cmd.argv, port=port, client_host=eng.client_host,
                      ready_timeout=ctx.cfg.defaults.server_ready_timeout,
-                     log_path=log, sink=_printer(filt))
-    console.print(f"[dim]log: {escape(str(log))}  (Ctrl+C stops the router and all its models)[/]")
-    try:
-        try:
-            ep = await h.start()
-        except ServerError as e:
-            _fail(e, log)
+                     log_path=log, sink=_printer(filt), memory_cap_mib=mon.mem_cap_mib)
+
+    async def ready(ep) -> None:
         console.print(f"[green]✓[/] router ready after {ep.ready_s:.1f} s: [bold]{ep.base_url}[/]  pid {ep.pid}")
         await _do_loads(ep.root, load)
-        rc = await h.wait()
-        console.print(f"[yellow]router exited with code {rc}[/]")
-    finally:
-        _print_stop(await h.stop())
+
+    await run_server(ctx, h, log, mon, ready, what="router", hint="Ctrl+C stops the router and all its models")
 
 
-async def _router_background(ctx: Ctx, cmd, eng, port: int, ini: Path, load: list[str]) -> None:
+async def _router_background(ctx: Ctx, cmd, eng, port: int, ini: Path, load: list[str],
+                             mem_cap_mib: int | None = None) -> None:
     import psutil
 
     from mse_llm import serve as sv
@@ -603,7 +738,7 @@ async def _router_background(ctx: Ctx, cmd, eng, port: int, ini: Path, load: lis
     log = sv.servers_dir() / f"router-{port}.log"
     h = ServerHandle(cmd.argv, port=port, client_host=eng.client_host,
                      ready_timeout=ctx.cfg.defaults.server_ready_timeout,
-                     log_path=log, detached=True)
+                     log_path=log, detached=True, memory_cap_mib=mem_cap_mib)
     try:
         ep = await h.start()
     except ServerError as e:
@@ -629,7 +764,7 @@ def presets_stop(ctx: Ctx, port) -> None:
         p = port or _router_port(ctx, None)[0]
         msg = "no background router recorded" + (f" for port {port}" if port else "")
         if pr.port_in_use(p):
-            msg += f"; {pr.describe_port(p)} (`mse-llm hw processes --stop` ends engines)"
+            msg += f"; {pr.describe_port(p)} (`mse-llm hw processes --stop-ollama` ends Ollama)"
         console.print(msg)
         return
     for st in states:

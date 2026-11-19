@@ -222,9 +222,11 @@ def _signal(pid: int) -> None:
 
 # ---------------------------------------------------------------- Windows Job Object
 
-def _job_for(pid: int) -> object | None:
-    """Job Object with KILL_ON_JOB_CLOSE holding pid (Windows only, best effort)."""
-    if not IS_WINDOWS:
+def _job_for(pid: int, *, kill_on_close: bool = True, memory_cap_mib: int | None = None) -> object | None:
+    """Job Object holding pid (Windows only, best effort): KILL_ON_JOB_CLOSE for attached servers, and an
+    optional cap on the committed memory of the whole tree (children are in the job too), so a server can't
+    push the system into the pagefile: an allocation past the cap fails inside the server instead."""
+    if not IS_WINDOWS or not (kill_on_close or memory_cap_mib):
         return None
     try:
         import win32api
@@ -233,7 +235,11 @@ def _job_for(pid: int) -> object | None:
 
         job = win32job.CreateJobObject(None, "")
         info = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
-        info["BasicLimitInformation"]["LimitFlags"] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if kill_on_close:
+            info["BasicLimitInformation"]["LimitFlags"] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if memory_cap_mib:
+            info["BasicLimitInformation"]["LimitFlags"] |= win32job.JOB_OBJECT_LIMIT_JOB_MEMORY
+            info["JobMemoryLimit"] = int(memory_cap_mib) * 2**20
         win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, info)
         h = win32api.OpenProcess(win32con.PROCESS_SET_QUOTA | win32con.PROCESS_TERMINATE, False, pid)
         try:
@@ -259,6 +265,29 @@ def _terminate_job(job: object) -> None:
 LineSink = Callable[[str], None]
 
 
+def resolve_program(prog: str, cwd: Path | None = None) -> str:
+    """argv[0] -> an absolute path when it can be found, else unchanged (the start then reports "not found").
+
+    * A path with a directory part (`builds/llama.cpp/.../llama-bench`, `.\\x.exe`) is taken relative to
+      `cwd` (default: the current directory). Windows CreateProcess doesn't find a relative path written
+      with forward slashes, which is how Git Bash users type it.
+    * A bare name (`llama-bench`, `uvx`) is looked up on PATH with the PATHEXT extensions (.exe, .cmd ...).
+    * On Windows a missing `.exe` is added (`.../llama-bench` -> `.../llama-bench.exe`)."""
+    import shutil
+
+    p = Path(prog)
+    if p.parent != Path(".") or prog.startswith((".", "/", "\\")) or p.is_absolute():
+        base = p if p.is_absolute() else (cwd or Path.cwd()) / p
+        cands = [base]
+        if IS_WINDOWS and not base.suffix:
+            cands.insert(0, base.with_suffix(".exe"))
+        for c in cands:
+            if c.is_file():
+                return str(c.resolve())
+        return prog
+    return shutil.which(prog) or prog
+
+
 class Spawned:
     """A running command: stdout+stderr merged, each line written to the log file and passed to `sink`.
 
@@ -267,7 +296,8 @@ class Spawned:
 
     def __init__(self, argv: list[str], *, log_path: Path | None = None, sink: LineSink | None = None,
                  detached: bool = False, env: dict[str, str] | None = None, cwd: Path | None = None,
-                 keep_lines: int = 400) -> None:
+                 keep_lines: int = 400, memory_cap_mib: int | None = None) -> None:
+        self.memory_cap_mib = memory_cap_mib
         self.argv = argv
         self.log_path = log_path
         self.sink = sink
@@ -302,6 +332,8 @@ class Spawned:
     async def start(self) -> None:
         if self.log_path:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.argv:
+            self.argv = [resolve_program(self.argv[0], self.cwd), *self.argv[1:]]
         try:
             if self.detached:
                 self._start_detached()
@@ -322,7 +354,7 @@ class Spawned:
         self.proc = await asyncio.create_subprocess_exec(
             *self.argv, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT, env=self._env(), cwd=self.cwd, limit=4 * 2**20, **kw)
-        self.job = _job_for(self.proc.pid)
+        self.job = _job_for(self.proc.pid, memory_cap_mib=self.memory_cap_mib)
         if self.log_path:
             self._log = self.log_path.open("w", encoding="utf-8", errors="replace")
         self._reader = asyncio.create_task(self._read())
@@ -344,6 +376,8 @@ class Spawned:
                 self.proc = subprocess.Popen(self.argv, start_new_session=True, **common)
         finally:
             log.close()
+        if self.memory_cap_mib:     # cap only: the job must not end the server when mse-llm exits
+            self.job = _job_for(self.proc.pid, kill_on_close=False, memory_cap_mib=self.memory_cap_mib)
 
     async def _read(self) -> None:
         assert isinstance(self.proc, asyncio.subprocess.Process) and self.proc.stdout is not None

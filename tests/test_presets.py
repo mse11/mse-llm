@@ -193,3 +193,17 @@ def test_preview_locked_by_ngl_shows_unlocked_alternative(cfg):
 
 def test_preview_ctx_change():
     assert sv.diff_fitted(["-c", "65536", "-ngl", "all"], ["-c", "32768", "-ngl", "-2"], None) == ["-c 65536 → 32768"]
+
+
+def test_cli_serve_list(cfg):
+    r = CliRunner().invoke(main, ["--json", "serve", "--list"])
+    assert r.exit_code == 0, r.output
+    out = __import__("json").loads(r.output)
+    names = {m["name"] for m in out["models"]}
+    assert names == set(cfg.models)
+    mtp = next(m for m in out["models"] if m["name"] == "Qwen36_35B_A3B_UD_Q4_K_M_MTP")
+    assert mtp["command"] == "mse-llm serve Qwen36_35B_A3B_UD_Q4_K_M_MTP"
+    assert mtp["command_spec"].endswith("--spec")
+    assert {p["name"] for p in out["presets"]} >= {"Tesslate_OmniCoder-9B-Q4_K_M"}
+    r = CliRunner().invoke(main, ["serve"])                  # bare `serve` lists instead of failing
+    assert r.exit_code == 0 and "mse-llm serve NAME" in r.output and "--preset NAME" in r.output

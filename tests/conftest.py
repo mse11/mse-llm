@@ -16,3 +16,4 @@ def hw_fixture(monkeypatch):
 def _clean_env(monkeypatch):
     for k in ("MSE_LLM_CONFIG", "MSE_LLM_BUILDS_ROOT", "MSE_LLM_THREADS", "MSE_LLM_BENCHY_PP"):
         monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("MSE_LLM_NO_NOTIFY", "1")      # tests never speak

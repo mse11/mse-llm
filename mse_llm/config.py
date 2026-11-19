@@ -98,6 +98,22 @@ class PresetsCfg(_Model):
         return p if p.is_absolute() else project_root() / p
 
 
+class MonitorCfg(_Model):
+    """[monitor] (§5, §9 item 7). Status thresholds are the bash ones; the guard stops a run live."""
+    interval: float = 0.5                  # seconds between samples (bash: 1 s, with 3-4 powershell calls each)
+    guard: bool = True                     # stop the server on a spill / RAM / commit trip
+    spill_stop_mib: int = 100              # bash: shared delta > 100 MiB = offloaded to system RAM
+    vram_full_mib: int = 256               # dedicated VRAM counts as full below this much free
+    host_tolerance_pct: float = 2.0        # allowed error of fit's host-buffer size (measured: 0.5 %)
+    ram_stop_pct: float = 95.0
+    commit_stop_pct: float = 95.0
+    job_memory_cap_mib: int | None = None  # Windows Job Object cap on the server tree's committed memory
+    ram_warn_pct: float = 60.0             # bash status thresholds
+    ram_fail_pct: float = 80.0
+    temp_warn_c: float = 75.0
+    temp_fail_c: float = 85.0
+
+
 class SweepCfg(_Model):
     model: str
     engine: str = "cuda_flash"
@@ -128,6 +144,7 @@ class Config(_Model):
     sweeps: dict[str, SweepCfg] = Field(default_factory=dict)
     hw: HwCfg = Field(default_factory=HwCfg)
     presets: PresetsCfg = Field(default_factory=PresetsCfg)
+    monitor: MonitorCfg = Field(default_factory=MonitorCfg)
     source: Path | None = Field(default=None, exclude=True)
 
     def engine(self, name: str | None = None) -> tuple[str, EngineCfg]:

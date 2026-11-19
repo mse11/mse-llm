@@ -16,11 +16,11 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | F6 | `run_serve_params_on_background`, `server_wait_for_ready`, `server_stop_windows` | `ServerHandle` | 50× start/stop, no orphans | ✓ M5: `ServerHandle` (port check, spawn in its own process group + kill-on-close Job Object, `/health` poll with fail-fast, graceful CTRL_BREAK, tree kill, port verified free). 50× with the fake server (2 children each) and 50× with the real router + 10× real model load/chat, no `llama-server` left |
 | F7 | `run_serve_params` + `_FILTER`, output modes | `mse-llm serve --output` | same filtered lines | ✓ M5: `serve` runs (foreground, Ctrl+C stops the tree), `--output filter` = the `run_serve_params_FILTER` regexes; + fit pre-check |
 | F8 | `run_presets_serve`, `run_PRESETS_serve`, `run_PRESETS_dump`, `run_presets_dump` | `mse-llm presets …` | existing INI serves all 5 models | ✓ M5: `presets serve` (foreground / `--background`, `--load`), `validate`, `fix`, `list`, `dump`, `generate`, `status`, `load`/`unload`, `watch`, `stop`; all 5 models listed, two models switched through one endpoint; the generated INI validates and maps back to every `default_serve` |
-| F9 | `EXEC_cmd_with_gpu_and_ram_monitoring` | `monitor/` | peaks within tolerance | ☐ M6 (M1: NVML/PDH availability checked by `doctor`) |
+| F9 | `EXEC_cmd_with_gpu_and_ram_monitoring` | `monitor/` | peaks within tolerance | ✓ M6: run side by side with the real bash function on one Qwen3.6-28B load: shared 16063 vs 16064 MiB, temp 53 vs 53 °C, dedicated 4728 vs 4442 MiB (bash samples every ~2 s); RAM differs because of a bash bug (below). Live memory guard added |
 | F10 | `run_dump_params_wrapper_PLOTER` | `mse-llm report chart` (+ `--legacy-log`) | old logs give the same chart | ☐ M8 |
 | F11 | `run_dump_params_wrapper_AI_PROMPT/_COMMON/_EXTRAS/_PROMPTS` | `mse-llm report prompt` | same sections + data | ☐ M8 |
 | F12 | `run_inspect_params*` | `mse-llm eval` | real eval runs | ◐ M3: `eval MODEL TASK --dry-run` = the bash builder (URL from the engine); running in M12 |
-| F13 | `EXEC_user_notification_WIN_T2S` | `notify.py` | voice message at end of run | ☐ M6 |
+| F13 | `EXEC_user_notification_WIN_T2S` | `notify.py` | voice message at end of run | ✓ M6: SAPI through COM (no powershell); `serve` / `presets serve` / `monitor -- CMD` speak at the end; `--no-notify`, `mse-llm notify TEXT` |
 | F14 | `EXEC_cmd_with_output_mode` (all/filter/none) | `--output` | — | ✓ M5: `--output all\|filter\|none`, `[defaults].output`, `[defaults].output_filter` (default: the bash list) |
 | F15 | `MSE_*` knobs | config fields / `MSE_LLM_*` env / `--dry-run` | each knob mapped or dropped | ◐ M0: see the knob table below |
 | — | `run_BENCH_*`, `run_BENCHY_WITH_SERVER_*`, `run_SERVER_*`, `run_INSPECT_*` group functions (+ commented entries, "SWEETSPOT", "PC freeze" notes) | `[sweeps.*]` + `annotations` | one entry per function, notes kept | ☐ M7 |
@@ -36,9 +36,9 @@ Legend: ✓ done and checked · ◐ partly done · ☐ not started · ✗ droppe
 | `MSE_BENCH_TG` | `[defaults].bench_tg`, `MSE_LLM_BENCH_TG` | ✓ M0 |
 | `MSE_BENCHY_PP` / `_PP_SYNCH` / `_DEPTH` / `_RUNS` | `[defaults.benchy]`, `MSE_LLM_BENCHY_*` | ✓ M0 |
 | `MSE_SERVER_READY_TIMEOUT` | `[defaults].server_ready_timeout` | ✓ M0 |
-| `MSE_MONITOR_ENABLED` | `[defaults].monitor` | ✓ M0 (used from M6) |
+| `MSE_MONITOR_ENABLED` | `[defaults].monitor`, `--no-monitor` | ✓ M0, M6 |
 | `MSE_LLAMA_BIN_DIR` | `[engines.*].bin_dir`, from the build profile | ✓ M0; M2: `builds\llama.cpp\build\bin\Release` built by `mse-llm build run`, same folder in the script |
-| `MSE_PS_DEBUG` | — | ✗ dropped (needs your OK): it printed `ps aux` around the bash PID juggling; `ServerHandle` has no shell processes, and `StopReport` lists every PID of the tree |
+| `MSE_PS_DEBUG` | — | ✗ dropped (approved 2026-11-19): it printed `ps aux` around the bash PID juggling; `ServerHandle` has no shell processes, and `StopReport` lists every PID of the tree |
 | `MSE_SERVER_PRESETS_DUMP` | `--dry-run`, `serve --all --dry-run`, `presets dump` (the INI) | ✓ M3, M5 |
 | `MSE_PRESETS_SERVE_FILE` | `[presets].file`, `presets serve --file` | ✓ M3 (argv), M5 (serving) |
 | `MSE_TEST_INSPECT_PATH` | `eval` config | ☐ M12 |
@@ -147,3 +147,32 @@ Every built llama-server / llama-bench argv is also checked against the engine's
   * `presets validate` on the original INI (reconstructed in `tests/fixtures/presets/original_broken.ini`) gives
     the §4.3 findings; `presets fix --write` turns it into the committed `llama_cpp_presets.ini` except the comments.
   * The ServerHandle cycle test runs 10× by default (~25 s); `MSE_LLM_TEST_CYCLES=50` runs the acceptance count.
+* **M6 (2026-11-19):** `monitor/` (`nvidia.py` NVML, `windows.py` PDH, `system.py` psutil; `Monitor`, `Guard`,
+  `summarize` in `__init__.py`), `notify.py`, Job Object memory cap in `proc.py`, commands `monitor [-- CMD]` and
+  `notify` (`cli_monitor.py`); `serve` and foreground `presets serve` run under the monitor (`--no-monitor`,
+  `--no-guard`, `--mem-cap`), print the bash-style RESULTS block, write `results/servers/*.monitor.csv`, and exit 2
+  after a guard stop. New `[monitor]` config table. Samples every 0.5 s (all samplers in parallel threads).
+  * **The bash spill rule is wrong for MoE offload.** "Shared GPU memory delta > 100 MiB = offloaded to system RAM"
+    fires on every `-ncmoe` run: llama.cpp's pinned host buffers for the CPU experts count as shared GPU memory.
+    Measured: a fitting Qwen3.6-28B `moe41` shows +15892 MiB shared (the bash function printed "Performance hit
+    detected" for it), equal to the 15807 MiB host part `fit` predicts (0.5 % off). A real spill (Qwen3.6-35B
+    `moe10`, 17.2 GB on 11.4 GB free) looks different: dedicated VRAM fills up first (12140 / 12282 MiB), then the
+    server's own shared memory keeps growing. The guard stops a run when (A) dedicated VRAM is full and the
+    server's shared memory grows > 100 MiB after that, (B) the server's shared memory exceeds the host buffers
+    `fit` expects by > max(100 MiB, 2 %), or (C) RAM > 95 % / commit > 95 %. The summary says "no spill" with the
+    numbers when fit's host size is known, and explains the bash rule otherwise.
+  * **Shared memory per process:** `\GPU Process Memory(pid_*)\Shared Usage` for the server tree, matched to the
+    NVIDIA adapter's LUID; the adapter-wide `\GPU Adapter Memory(*)\Shared Usage` sum the plan names would mix in
+    the AMD iGPU's normal shared memory (1156 MiB here). The bash number (`Non Local Usage` sum) is kept as
+    `nonlocal_mib` for comparison.
+  * **Forced over-commit, real:** `serve Qwen36_35B_A3B_UD_Q4_K_M_MTP -v fa_Kq8_Vq8_default_moe10 --yes` was
+    stopped by rule A 8 s after start with 586 MiB spilled (192-320 MiB over the full point, one 0.5 s sample),
+    exit code 2, no process left. Without the guard the same load reached 9 GB of shared memory in 60 s.
+  * **Bash RAM bug:** Git Bash has no `free`, and the monitor loop never clears `RAM_USED`, so after the first
+    PowerShell sample RAM is never measured again; the bash "Peak RAM" is the value at the start (44046 MiB vs
+    60015 MiB measured while 15.9 GB of expert buffers were pinned). Our RAM = total - available = the same
+    formula as bash's PowerShell line (checked: 59583 vs 59574 MiB at the same moment).
+  * **Job Object cap:** on Windows WDDM, VRAM allocations count against the job's committed memory too: with
+    `--mem-cap 2000`, OmniCoder 9B failed with "cudaMalloc failed: out of memory" for its 5 GB CUDA buffer. A cap
+    must cover VRAM + host buffers + RAM; it is off by default.
+  * Not in M6: Parquet output (CSV only, no pandas dependency); thermal gating between runs (§9 item 2, M15).

@@ -69,6 +69,7 @@ llama.cpp's `--fit` would change, and asks before starting (`--yes` skips the qu
 server and every child process; the port is checked free afterwards. Logs: `results\servers\`.
 
 ```
+uv run mse-llm serve --list                                              # what can be served (also: bare `serve`)
 uv run mse-llm serve Qwen36_28B_REAP20_A3B_Q4_K_M                        # run_SERVER_* (default_serve, --fit on)
 uv run mse-llm serve omnicoder_9b --output all                           # all | filter (default) | none
 uv run mse-llm serve --preset gemma-4-26B-A4B-it-qat-UD-Q4_K_XL          # one INI section, outside the router
@@ -81,6 +82,18 @@ uv run mse-llm presets generate --out config/presets.ini   # INI from [models.*]
 uv run mse-llm presets serve                    # run_PRESETS_serve, foreground (Ctrl+C stops all models)
 uv run mse-llm presets serve --background --load Tesslate_OmniCoder-9B-Q4_K_M
 uv run mse-llm presets status | load NAME | unload NAME | watch | stop
+```
+
+Monitoring + freeze prevention (M6). `serve` and `presets serve` sample VRAM, shared GPU memory, RAM, commit
+and temperature every 0.5 s and stop the server on a GPU memory spill (dedicated VRAM full and the server's
+shared memory still growing, or more shared memory than the host buffers `fit` expects) or RAM / commit > 95 %
+(exit code 2). `-ncmoe` experts in pinned host memory show up as shared GPU memory but are not a spill.
+
+```
+uv run mse-llm monitor --duration 30                          # sample the system
+uv run mse-llm monitor --guard --expect-host 15807 -- llama-bench.exe -m X.gguf ...   # bash EXEC_cmd_with_gpu_and_ram_monitoring
+uv run mse-llm serve omnicoder_9b --no-guard | --no-monitor | --mem-cap 40000
+uv run mse-llm --no-notify serve ...                          # no voice message at the end
 ```
 
 `--fit` only adjusts what you did not set: with `-ngl all` (always passed by `serve`) or `-ncmoe`, llama.cpp

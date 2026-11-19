@@ -83,7 +83,8 @@ class ServerHandle:
 
     def __init__(self, argv: list[str], *, port: int, client_host: str = "localhost", health_path: str = "/health",
                  ready_timeout: float = 120, log_path=None, sink=None, detached: bool = False,
-                 env: dict[str, str] | None = None, grace: float = 5.0, progress=None) -> None:
+                 env: dict[str, str] | None = None, grace: float = 5.0, progress=None,
+                 memory_cap_mib: int | None = None) -> None:
         from mse_llm.proc import Spawned
 
         self.port = port
@@ -94,7 +95,8 @@ class ServerHandle:
         self.grace = grace
         self.progress = progress
         self.keep = False
-        self.proc = Spawned(argv, log_path=log_path, sink=sink, detached=detached, env=env)
+        self.proc = Spawned(argv, log_path=log_path, sink=sink, detached=detached, env=env,
+                            memory_cap_mib=memory_cap_mib)
         self.endpoint: Endpoint | None = None
         self.stop_report = None
 
@@ -109,7 +111,7 @@ class ServerHandle:
         from mse_llm.health import NotReady, root_of, wait_ready
 
         if await asyncio.to_thread(pr.port_in_use, self.port):
-            raise ServerError(pr.describe_port(self.port) + "; stop it first (`mse-llm hw processes --stop`, "
+            raise ServerError(pr.describe_port(self.port) + "; stop it first (`mse-llm hw processes --stop-ollama`, "
                               "`mse-llm presets stop`) or pick another --port")
         try:
             await self.proc.start()
@@ -131,6 +133,8 @@ class ServerHandle:
     async def stop(self):
         if self.proc.proc is None:
             return None
+        if self.stop_report is not None and self.proc.returncode is not None:
+            return self.stop_report          # already stopped (e.g. by the memory guard)
         self.stop_report = await self.proc.stop(grace=self.grace, port=self.port)
         return self.stop_report
 

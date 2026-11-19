@@ -180,3 +180,34 @@ def test_state_files(tmp_path, monkeypatch):
     assert st["port"] == 1234 and sv.state_alive(st)
     assert not sv.state_alive({"pid": me.pid, "create_time": me.create_time() - 100})
     assert sv.read_state("router", 999) == []
+
+
+def test_resolve_program(tmp_path, monkeypatch):
+    sub = tmp_path / "bin" / "Release"
+    sub.mkdir(parents=True)
+    exe = sub / ("tool.exe" if sys.platform == "win32" else "tool")
+    exe.write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+    want = str(exe.resolve())
+    assert pr.resolve_program("bin/Release/" + exe.name) == want            # Git Bash style, forward slashes
+    assert pr.resolve_program(str(Path("bin") / "Release" / exe.name)) == want
+    assert pr.resolve_program("./bin/Release/" + exe.name) == want
+    if sys.platform == "win32":
+        assert pr.resolve_program("bin/Release/tool") == want               # .exe added
+    assert pr.resolve_program("bin/Release/missing") == "bin/Release/missing"   # left for "not found"
+    assert pr.resolve_program("tool", cwd=sub) in (want, "tool")             # bare name: PATH lookup only
+    assert Path(pr.resolve_program(Path(sys.executable).name)).is_file()     # found on PATH
+
+
+def test_relative_program_starts(tmp_path, monkeypatch):
+    """`mse-llm monitor -- builds/.../llama-bench.exe` failed with "not found" before the lookup."""
+    exe = Path(sys.executable)
+    monkeypatch.chdir(exe.parent.parent)
+    rel = f"{exe.parent.name}/{exe.name}"                 # e.g. Scripts/python.exe, forward slash
+
+    async def go():
+        sp = pr.Spawned([rel, "-c", "print('hello')"])
+        await sp.start()
+        return await sp.wait(), list(sp.lines)
+    rc, lines = asyncio.run(go())
+    assert rc == 0 and lines == ["hello"]

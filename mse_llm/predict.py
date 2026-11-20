@@ -643,7 +643,7 @@ class Point:
 
 def with_axes(v: Variant, ncmoe: int | None, ub: int | None) -> Variant:
     """The base variant with -ncmoe / -b -ub replaced (b = ub, as in the bash sweeps)."""
-    nv = replace(v, spec_type=None, spec_n_max=None)
+    nv = v.without_spec()
     if ncmoe is not None:
         nv = replace(nv, n_cpu_moe=ncmoe, cpu_moe=False)
     if ub is not None:

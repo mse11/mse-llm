@@ -12,16 +12,19 @@ def benchy_command(cfg: Config, model: str, variant: Variant | str | None, ctx: 
                    engine: str | None = None, *, pp: list[int] | None = None, tg: list[int] | None = None,
                    depth: list[int] | None = None, runs: int | None = None,
                    concurrency: list[int] | None = None, port: int | None = None,
-                   save_result: str | None = None) -> Command:
+                   save_result: str | None = None, prompts: str | None = None,
+                   book_url: str | None = None) -> Command:
     """`uvx llama-benchy ...` against the background server for (model, variant, ctx).
 
     PP list: --pp, else the server context when [defaults.benchy].pp_sync_ctx (bash MSE_BENCHY_PP_SYNCH=1,
     which made the PP sweep the context itself), else [defaults.benchy].pp. Every list goes after ONE
     flag (`--pp 512 2048`): benchy uses nargs='+', so the bash `--pp a --pp b` kept only the last value.
-    save_result: benchy writes its JSON there (`--format json --save-result`), which the results store reads."""
+    save_result: benchy writes its JSON there (`--format json --save-result`), which the results store reads.
+    prompts: "prose" (benchy's default book) or "code" (the code corpus, served to benchy over a local HTTP
+    URL: book_url, set when the job runs). Acceptance of speculative decoding depends on the content (§4.5)."""
     v = as_variant(variant)
     server = server_command(cfg, model, v, ctx, engine, fit=cfg.defaults.fit, purpose="benchy-server",
-                            port=port)
+                            port=port, metrics=True)
     mkey, m = cfg.model(model)
     _, eng = cfg.engine(engine)
     b = cfg.defaults.benchy
@@ -40,11 +43,15 @@ def benchy_command(cfg: Config, model: str, variant: Variant | str | None, ctx: 
             "--pp", *map(str, pps), "--tg", *map(str, tgs), "--depth", *map(str, depths)]
     if concurrency:
         argv += ["--concurrency", *map(str, concurrency)]
+    if prompts not in (None, "prose"):
+        argv += ["--book-url", book_url or f"<{prompts} corpus url>"]
     if save_result:
         argv += ["--format", "json", "--save-result", save_result]
+    params = {"pp": pps, "tg": tgs, "depth": depths, "runs": nruns, "concurrency": list(concurrency or [1])}
+    if prompts not in (None, "prose"):
+        params["prompts"] = prompts
     cmd = Command("llama-benchy", argv, label=f"benchy {mkey} {v.name}", model=mkey, variant=v.name, ctx=ctx,
-                  server=server, params={"pp": pps, "tg": tgs, "depth": depths, "runs": nruns,
-                                         "concurrency": list(concurrency or [1])})
+                  server=server, params=params)
     if ctx:
         need = max(pps) + max(tgs) + max(depths)
         if need > ctx:

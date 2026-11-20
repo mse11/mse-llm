@@ -143,6 +143,9 @@ class SweepCfg(_Model):
     depth: list[int] = Field(default_factory=list)
     runs: int | None = None
     concurrency: list[int] = Field(default_factory=list)
+    # benchy: prompt sets, one job per set: prose (benchy's book) | code (llama.cpp sources) | wikitext2 | FILE.
+    # Speculative-decoding acceptance depends on the content, so spec sweeps run both (§4.5).
+    prompt_sets: list[str] = Field(default_factory=list)
     task: str | None = None                 # eval: inspect task (M12)
     bash: str | None = None                 # the bash function this sweep replaces
     notes: str | None = None

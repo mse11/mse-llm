@@ -136,7 +136,8 @@ runs of this PC, globally and per model (a model's own runs teach it, for exampl
 experts); speculative-decoding runs are not used. `sweep search` uses the prediction to pick the order of the
 stages, starts on the safe side (all experts on the CPU, smallest `-ub`), never starts a config predicted
 no-fit or tight, stops a stage at the first spill / failed / skipped run, and takes the winner one step back
-from the edge. Earlier ok runs with the same settings and build are reused. The search is stored in
+when the best run is right next to such a failed run (not next to an edge that is only predicted).
+Earlier ok runs with the same settings and build are reused. The search is stored in
 `results/search/<model>/<build>__<hw>.json`.
 
 ```
@@ -147,6 +148,34 @@ uv run mse-llm sweep search gemma_4_26B_A4b_QAT_UD_Q4_K_XL [--goal tg|pp|both] [
 ```
 
 `--apply` writes the winner as `[models.*].default_serve` into the config file (`presets generate` uses it).
+
+Quality and speculative decoding (M10, §4.5). `quality kld` measures how much a K/V-cache choice changes the
+model's token probabilities: llama-perplexity against an f16-KV reference of the same GGUF (mean / 99 % KLD,
+"same top p", PPL ratio), next to a noise floor (the reference again with another placement, i.e. GPU vs CPU math).
+Verdict: within 2x the floor = no measurable loss, else negligible (< 0.001) / small (< 0.01) / noticeable /
+large. The reference is ~2 GiB per chunk at ctx 8192 (15 GiB for 8 chunks of a 248k-vocab model); its size is
+shown and confirmed before it is created, under `results/raw/kld-ref/`. When f16 KV doesn't fit: more experts on
+the CPU, then `-nkvo`, then a q8_0 reference (labelled "vs q8 ref"). Corpus: `code` (2 MB of llama.cpp sources,
+default), `wikitext2` (download once), or a file. Quality runs are not stopped by the power-plan check (the
+numbers don't depend on it).
+
+```
+uv run mse-llm quality kld Qwen36_35B_A3B_UD_Q4_K_M_MTP -v "fa_Kq8_Vq{8,4}_default_moe34" [--ctx 8192] [--chunks 8]
+uv run mse-llm quality kld-ref MODEL [-v PLACEMENT] [--dry-run]   # only the reference (+ floor)
+uv run mse-llm quality floor MODEL | list [MODEL] | clean MODEL|--all | corpus [wikitext2 --download]
+uv run mse-llm sweep run NAME --with-kld        # one KLD run per distinct K/V pair, before the speed runs
+```
+
+Every server a benchmark starts gets `--metrics` (the router too); benchy runs of `sd*` variants store
+`spec`: drafted / accepted tokens, acceptance rate, mean accepted length and the acceptance per draft position
+(the `/metrics` delta over the run; the slot log line as fallback), plus the sampling (temperature lowers
+acceptance). `--prompts code` (or `prompt_sets = ["prose", "code"]` in a sweep) runs benchy on the code corpus,
+served on a local URL. Draft-side tokens: `sdmin<N>`, `dK<t>` / `dV<t>` (draft KV), `dmoe<N>` / `dcmoe`.
+
+```
+uv run mse-llm benchy Qwen36_35B_A3B_UD_Q4_K_M_MTP -v "fa_Kq8_Vq8_default_moe34_sd{2,3,4}mtp" --prompts prose --prompts code
+uv run mse-llm report spec --model Qwen36_35B_A3B_UD_Q4_K_M_MTP --chart   # vs the no-spec run; slower = flagged
+```
 
 Sweep entries keep the bash comments as data: `status = "off"` (commented out: `--include-off`),
 `status = "skip"` ("PC freeze": only with `--force`), `note` and `tag` (sweetspot, sporadic-freeze, ...).

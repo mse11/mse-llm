@@ -8,8 +8,11 @@
     3. In each direction the stage stops at the edge: the first predicted no-fit / tight config, or the first run
        that spills, trips the guard, fails (CUDA out of memory with "Prefer No Sysmem Fallback") or is skipped by
        the fit check. It also stops when the goal metric stopped improving for `patience` steps.
-    4. The winner is taken one step back from the edge when the best run is the one right next to it (your notes
-       show sporadic freezes right next to working configs).
+    4. The winner is taken one step back when the best run is right next to a *real* failure (a run that spilled,
+       tripped the guard, failed or was skipped by the fit check; your notes show sporadic freezes right next to
+       configs that broke). An edge that is only predicted (never run) does not move the winner: the best run
+       already passed the fit check with the margin (measured: gemma moe10 TG 67.9 with 1075 MiB left lost to
+       moe15 at 50.8 when the predicted edge counted too).
 
 Every step is a normal RunResult in results/ (sweep "search:<model>"), so an earlier ok run with the same
 settings and build is reused instead of run again. The whole search (steps, edges, winner) is written to
@@ -75,13 +78,15 @@ class Stage:
     steps: list[Step] = field(default_factory=list)
     edge: str | None = None           # variant where the edge was found
     edge_reason: str | None = None
+    edge_real: bool = False           # the edge is a run that failed (not only a prediction)
     winner: str | None = None
     stepped_back: bool = False
     stop: str | None = None           # why the stage ended (edge / no gain / max runs / end of range)
 
     def as_dict(self) -> dict[str, Any]:
         return {"axis": self.axis, "values": self.values, "fixed": self.fixed, "edge": self.edge,
-                "edge_reason": self.edge_reason, "winner": self.winner, "stepped_back": self.stepped_back,
+                "edge_reason": self.edge_reason, "edge_real": self.edge_real, "winner": self.winner,
+                "stepped_back": self.stepped_back,
                 "stop": self.stop, "steps": [s.as_dict() for s in self.steps]}
 
 
@@ -249,6 +254,7 @@ async def search(pred: pr.Prediction, *, model: str, tool: str = "bench", goal: 
                 break
             if not st.ok:
                 stage.edge, stage.edge_reason = st.variant, f"{st.status}: {st.reason or ''}".strip(": ")
+                stage.edge_real = not st.status.startswith("predicted")
                 stage.stop = "edge"
                 break
             if best is None or st.metric(goal) > best.metric(goal) * (1 + MIN_GAIN):
@@ -263,7 +269,7 @@ async def search(pred: pr.Prediction, *, model: str, tool: str = "bench", goal: 
         ok = [x for x in stage.steps if x.ok]
         if ok:
             win = max(ok, key=lambda x: x.metric(goal))
-            if step_back and stage.edge and win is ok[-1] and len(ok) > 1:
+            if step_back and stage.edge_real and win is ok[-1] and len(ok) > 1:
                 win, stage.stepped_back = ok[-2], True
             stage.winner = win.variant
             if axis == "ncmoe":

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from mse_llm.util import exe, project_root, run
 
-TOOLS = ("llama-server", "llama-bench")
+TOOLS = ("llama-server", "llama-bench", "llama-perplexity")
 
 
 def snapshots_dir() -> Path:

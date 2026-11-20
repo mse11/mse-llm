@@ -103,6 +103,9 @@ def _result_line(r) -> str:
         parts.append(f"VRAM peak {vram:.0f} MiB")
     if mon.get("spill_mib") is not None and mon.get("expected_host_mib") is not None:
         parts.append(f"shared {mon['spill_mib']:+.0f} MiB vs fit")
+    sp = spec_text(r.spec)
+    if sp:
+        parts.append(sp)
     if r.duration_s is not None:
         parts.append(f"{r.duration_s:.0f} s")
     head = f"{_ICON[r.status]} {r.status}"
@@ -111,14 +114,38 @@ def _result_line(r) -> str:
     return head + ("  " + "  ".join(parts) if parts else "")
 
 
+def spec_text(s: dict | None, positions: int = 6) -> str:
+    """`acc 71.2 % · len 2.85 · per pos .85/.70/.55` for a speculative-decoding run."""
+    if not s:
+        return ""
+    if not s.get("drafted"):
+        return "acc - (nothing drafted)"
+    out = f"acc {s['acceptance_rate'] * 100:.1f} %"
+    if s.get("mean_accept_len"):
+        out += f" · len {s['mean_accept_len']:.2f}"
+    rates = s.get("accept_rate_per_pos") or []
+    if rates:
+        out += " · per pos " + "/".join(f"{x:.2f}".lstrip("0") or "0" for x in rates[:positions])
+    if s.get("prompts") and s["prompts"] != "prose":
+        out += f" ({s['prompts']})"
+    return out
+
+
 def _summary_table(results) -> Table:
-    t = Table("#", "variant", "ctx", "PP t/s", "TG t/s", "VRAM peak", "status", "note", title="results")
+    spec = any(r.spec for r in results)
+    cols = ["#", "variant", "ctx", "PP t/s", "TG t/s"] + (["acceptance"] if spec else []) + ["VRAM peak", "status",
+                                                                                          "note"]
+    t = Table(*cols, title="results")
     for i, r in enumerate(results, 1):
         m = r.metrics
         vram = (((r.monitor or {}).get("stats") or {}).get("vram_used_mib") or {}).get("peak")
         st = f"{_ICON[r.status]} {r.status}"
-        t.add_row(str(i), r.variant, str(r.ctx or "-"), _fmt(m.get("pp_tps")), _fmt(m.get("tg_tps"), 2),
-                  "-" if vram is None else f"{vram:.0f}", st, escape((r.reason or r.note or "")[:60]))
+        row = [str(i), r.variant + (f" ({r.params['prompts']})" if r.params.get("prompts") else ""),
+               str(r.ctx or "-"), _fmt(m.get("pp_tps")), _fmt(m.get("tg_tps"), 2)]
+        if spec:
+            row.append(spec_text(r.spec, 4))
+        row += ["-" if vram is None else f"{vram:.0f}", st, escape((r.reason or r.note or "")[:60])]
+        t.add_row(*row)
     return t
 
 
@@ -231,17 +258,22 @@ def bench_cmd(ctx: Ctx, model, patterns, from_file, engine, dry_run, ctxs, tg, r
 @click.option("--runs", type=int, default=None)
 @click.option("--concurrency", type=int, multiple=True, help="Concurrent requests (benchy --concurrency).")
 @click.option("--port", type=int, default=None, help="Port of the background server (default: the engine's).")
+@click.option("--prompts", "prompt_sets", multiple=True,
+              help="Prompt set: prose (benchy's book, default) | code (llama.cpp sources) | wikitext2 | FILE. "
+                   "Repeatable: one run per set (speculative-decoding acceptance depends on the content).")
 @_run_options
 @pass_ctx
 def benchy_cmd(ctx: Ctx, model, patterns, from_file, engine, dry_run, ctx_, pp, tg, depth, runs, concurrency, port,
-               **run) -> None:
+               prompt_sets, **run) -> None:
     """llama-benchy against a background llama-server per variant, monitored, results into results/
     (bash run_benchy_params_with_server / run_BENCHY_WITH_SERVER_*)."""
     from mse_llm import bench as bb
 
     vs = _variants_for(ctx, model, patterns, from_file)
     params = {"pp": list(pp), "tg": list(tg), "depth": list(depth), "runs": runs, "concurrency": list(concurrency)}
-    jobs = [(bb.Job("benchy", model, v, ctx_, dict(params), engine), "run", "") for v in vs]
+    sets = [None if s == "prose" else s for s in prompt_sets] or [None]
+    jobs = [(bb.Job("benchy", model, v, ctx_, dict(params) if s is None else {**params, "prompts": s}, engine),
+             "run", "") for v in vs for s in sets]
     _execute(ctx, bb.plan(ctx.cfg, jobs, port=port), _opts(ctx, port=port, **run), f"benchy {model}", dry_run)
 
 
@@ -333,19 +365,34 @@ def sweep_show(ctx: Ctx, name) -> None:
 @click.option("--only-failed", is_flag=True, help="Run only variants whose last run on this build failed/aborted.")
 @click.option("--port", type=int, default=None, help="benchy: port of the background server.")
 @click.option("--dry-run", is_flag=True, help="Print the commands and what would be skipped, and stop.")
+@click.option("--prompts", "prompt_sets", multiple=True,
+              help="benchy: prompt sets (prose | code | wikitext2 | FILE) instead of the sweep's prompt_sets.")
+@click.option("--with-kld", is_flag=True,
+              help="First a KLD run per distinct K/V combination of the sweep (quality kld; reference made if "
+                   "missing).")
+@click.option("--kld-ctx", type=int, default=None, help="--with-kld: KLD context (default 8192).")
+@click.option("--yes", "-y", is_flag=True, help="--with-kld: don't ask before creating a reference.")
 @json_option
 @_run_options
 @pass_ctx
-def sweep_run(ctx: Ctx, name, ctx_, include_off, match, resume, only_failed, port, dry_run, force, **run) -> None:
+def sweep_run(ctx: Ctx, name, ctx_, include_off, match, resume, only_failed, port, dry_run, prompt_sets, with_kld,
+              kld_ctx, yes, force, **run) -> None:
     """Run a sweep: every variant with status on, one result per variant (bash run_BENCH_* / run_BENCHY_*)."""
     from mse_llm import bench as bb
 
     sw = _sweep(ctx, name)
     try:
-        jobs = bb.sweep_jobs(ctx.cfg, name, ctx=ctx_, include_off=include_off, force=force, match=list(match))
+        jobs = bb.sweep_jobs(ctx.cfg, name, ctx=ctx_, include_off=include_off, force=force, match=list(match),
+                             prompt_sets=list(prompt_sets) or None)
     except ValueError as e:
         raise click.ClickException(str(e)) from e
     planned = bb.plan(ctx.cfg, jobs, resume=resume, only_failed=only_failed, port=port)
+    if with_kld:
+        from mse_llm import cli_quality as cq
+
+        todo = [p.job.variant for p in planned if p.action == "run"]
+        cq.sweep_kld(ctx, sw.model, todo, name, sw.engine, kld_ctx=kld_ctx, yes=yes, dry_run=dry_run,
+                     output=run.get("output"), no_guard=run.get("no_guard", False))
     if not any(p.action == "run" for p in planned) and not dry_run:
         off = sum(1 for p in planned if "status off" in p.why)
         _print_plan(planned)
@@ -366,7 +413,7 @@ def results() -> None:
 @results.command("list")
 @click.option("--model", default=None, help="Model key (substring).")
 @click.option("--sweep", "sweep_", default=None)
-@click.option("--tool", type=click.Choice(["bench", "benchy", "eval"]), default=None)
+@click.option("--tool", type=click.Choice(["bench", "benchy", "eval", "quality"]), default=None)
 @click.option("--status", type=click.Choice(["ok", "failed", "aborted", "skipped"]), default=None)
 @click.option("-n", "--limit", type=int, default=30, show_default=True, help="Last N runs (0 = all).")
 @json_option
@@ -413,7 +460,8 @@ def results_show(ctx: Ctx, run_id) -> None:
         return
     console.print(f"[bold]{r.run_id}[/]  {_ICON[r.status]} {r.status}" + (f": {escape(r.reason)}" if r.reason else ""))
     b = r.build
-    for k, val in (("tool", f"{r.tool} ({r.tool_version or '?'})"), ("model", f"{r.model}  {r.model_path}"),
+    for k, val in (("tool", r.tool + (f" ({r.tool_version})" if r.tool_version else "")),
+                   ("model", f"{r.model}  {r.model_path}"),
                    ("variant", r.variant), ("ctx", r.ctx), ("params", json.dumps(r.params)),
                    ("sweep", r.sweep), ("note", r.note),
                    ("build", f"{b.get('id')}  {b.get('describe') or ''}  engine {b.get('engine')}"),
@@ -433,6 +481,19 @@ def results_show(ctx: Ctx, run_id) -> None:
             t.add_row(x.kind, str(x.n_prompt), str(x.n_gen), str(x.depth), str(x.concurrency), pp, tg,
                       _fmt(x.ttft_ms, 0))
         console.print(t)
+    if r.spec:
+        _plain(f"{'spec':9} {r.spec.get('type')} n_max {r.spec.get('n_max')}: {spec_text(r.spec, 12)}  "
+               f"[{r.spec.get('source')}]")
+    if r.quality:
+        q = r.quality
+        line = f"{q.get('mode')}  corpus {(q.get('corpus') or {}).get('name')}, {q.get('chunks')} chunks"
+        if q.get("mean_kld") is not None:
+            line += (f"; mean KLD {q['mean_kld']:.6f}, 99 % {q.get('kld_p99')}, same top p "
+                     f"{(q.get('same_top_p') or 0) * 100:.2f} %, PPL ratio {q.get('ppl_ratio')}; "
+                     f"{q.get('verdict') or ''}")
+        elif q.get("ppl") is not None:
+            line += f"; PPL {q['ppl']}"
+        _plain(f"{'quality':9} {line}")
     if r.monitor:
         st = r.monitor.get("stats") or {}
         for key, label in (("vram_used_mib", "VRAM"), ("proc_shared_mib", "server shared"), ("ram_used_mib", "RAM"),

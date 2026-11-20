@@ -71,7 +71,7 @@ def _variant_flags(cmd: Command, v: Variant, tool: Literal["server", "bench"], m
 
 def server_command(cfg: Config, model: str, variant: Variant | str | None, ctx: int | None = None,
                    engine: str | None = None, *, fit: Fit = "on", port: int | None = None,
-                   purpose: str = "serve") -> Command:
+                   purpose: str = "serve", metrics: bool = False) -> Command:
     """llama-server for one model (bash run_serve_params_cmd_build).
 
     fit: "on" for `serve` (a too-large config is shrunk, §0.3), "off" for the background server of
@@ -95,6 +95,8 @@ def server_command(cfg: Config, model: str, variant: Variant | str | None, ctx: 
         argv += ["-lm", lm]
     argv += option_flags(m.serve_extra, helps)
     argv += ["--fit", fit, "--host", eng.host, "--port", str(port or eng.port)]
+    if metrics:
+        argv += ["--metrics"]          # /metrics: speculative-decoding acceptance per draft position (§4.5)
     cmd.argv = argv
     return _finish(cmd, "llama-server", helps, snap)
 
@@ -131,6 +133,44 @@ def bench_command(cfg: Config, model: str, variant: Variant | str | None, ctx: i
     return _finish(cmd, "llama-bench", helps, snap)
 
 
+# llama-perplexity knows the common model flags, not the server-only ones
+QUALITY_LOAD_MODE = "mmap"
+_PERPLEXITY_DROP = ("moe_cache_mib", "moe_cache_cpu_share", "fit_target")
+
+
+def perplexity_command(cfg: Config, model: str, variant: Variant | str | None, ctx: int, engine: str | None = None,
+                       *, corpus: str, chunks: int, logits_file: str, kld: bool, batch: int | None = None) -> Command:
+    """llama-perplexity for KLD (§4.5): reference run (`--kl-divergence-base FILE` saves the logits) or test run
+    (`--kl-divergence-base FILE --kl-divergence`). The variant gives K/V types and placement; speculative
+    decoding and the server-only flags are dropped (they don't change the logits)."""
+    from dataclasses import replace
+
+    mkey, m = cfg.model(model)
+    ename, eng = cfg.engine(engine)
+    v = as_variant(variant).without_spec()
+    v = replace(v, **{k: (None if k != "cpu_moe" else False) for k in _PERPLEXITY_DROP})
+    d = cfg.defaults
+    snap, helps = flagcheck.load_helps(eng.help_snapshot, eng.bin_path())
+    cmd = Command("llama-perplexity", [], label=f"{'kld' if kld else 'kld-ref'} {mkey} {v.name}", model=mkey,
+                  variant=v.name, ctx=ctx)
+    argv = [str(exe(eng.bin_path() / "llama-perplexity")), "-t", str(d.threads), "-m", m.path, "-f", corpus,
+            "-c", str(ctx), "--chunks", str(chunks), "-ngl", str(d.ngl)]
+    flags = _variant_flags(cmd, v, "server", m)
+    if batch and v.b is None:
+        flags += ["-b", str(batch)]
+    argv += flags
+    # mmap: the weights stay file-backed (page cache), so a 24 GB model does not count against the commit limit
+    # (measured: -lm none = 37 GB private for the 35B, the guard stopped the reference at 95 % commit). The load
+    # mode does not change the logits.
+    argv += ["-lm", v.load_mode or QUALITY_LOAD_MODE]
+    argv += ["--kl-divergence-base", logits_file]
+    if kld:
+        argv += ["--kl-divergence"]
+    cmd.argv = argv
+    cmd.params = {"chunks": chunks, "corpus": corpus, "mode": "kld" if kld else "ref"}
+    return _finish(cmd, "llama-perplexity", helps, snap)
+
+
 def presets_serve_command(cfg: Config, file: str | None = None, engine: str | None = None, *,
                           port: int | None = None, models_max: int | None = None,
                           memory_margin_mib: int | None = None) -> Command:
@@ -144,7 +184,7 @@ def presets_serve_command(cfg: Config, file: str | None = None, engine: str | No
     if not path.is_file():
         cmd.warnings.append(f"presets file not found: {path}")
     argv = [str(exe(eng.bin_path() / "llama-server")), "--models-preset", str(path),
-            "--host", eng.host, "--port", str(port or eng.port)]
+            "--host", eng.host, "--port", str(port or eng.port), "--metrics"]
     if models_max is not None:
         argv += ["--models-max", str(models_max)]
     if memory_margin_mib is not None:

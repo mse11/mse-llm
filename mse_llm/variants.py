@@ -18,6 +18,9 @@ Tokens:
 | `nohost` | `--no-host` | |
 | `fitt<MiB>` | `-fitt MiB` | |
 | `sd<N><type>` | `--spec-type T --spec-draft-n-max N` (+ `--model-draft` for draft types) | server only |
+| `sdmin<N>` | `--spec-draft-n-min N` | with `sd*` |
+| `dK<t>` / `dV<t>` | `-ctkd` / `-ctvd` (draft KV cache types) | with a draft type |
+| `dmoe<N>` / `dcmoe` | `-ncmoed N` / `-cmoed` (drafter experts on the CPU) | with a draft type |
 | `no_extra` | (nothing at all) | the bash warm-up entry |
 
 turbo2/3/4 cache types (`Kt*`, `Vt*`) are dropped (not in upstream llama.cpp): decoding them
@@ -88,6 +91,11 @@ class Variant:
     fit_target: int | None = None
     spec_type: str | None = None
     spec_n_max: int | None = None
+    spec_n_min: int | None = None         # --spec-draft-n-min
+    draft_ctk: str | None = None          # -ctkd
+    draft_ctv: str | None = None          # -ctvd
+    draft_n_cpu_moe: int | None = None    # -ncmoed
+    draft_cpu_moe: bool = False           # -cmoed
     extra: tuple[str, ...] = field(default_factory=tuple)   # raw flags, not part of the name
 
     # ------------------------------------------------------------ codec
@@ -107,6 +115,16 @@ class Variant:
     def as_dict(self) -> dict[str, Any]:
         return {k: v for k, v in asdict(self).items() if v not in (None, False, ())}
 
+    def without_spec(self) -> Variant:
+        """The main-model part only (llama-fit-params, llama-perplexity and llama-bench reject --spec-*)."""
+        return replace(self, spec_type=None, spec_n_max=None, spec_n_min=None, draft_ctk=None, draft_ctv=None,
+                       draft_n_cpu_moe=None, draft_cpu_moe=False)
+
+    @property
+    def has_draft_fields(self) -> bool:
+        return any(x not in (None, False) for x in (self.spec_n_min, self.draft_ctk, self.draft_ctv,
+                                                     self.draft_n_cpu_moe, self.draft_cpu_moe))
+
     # ------------------------------------------------------------ flags
 
     def flags(self, tool: Tool = "server", draft: str | None = None) -> tuple[list[str], list[str]]:
@@ -117,7 +135,8 @@ class Variant:
         out: list[str] = []
         warn: list[str] = []
         if tool == "bench":
-            bad = [t for t, on in (("sd (speculative decoding)", self.spec_type), ("cmoe", self.cpu_moe),
+            bad = [t for t, on in (("sd (speculative decoding)", self.spec_type or self.has_draft_fields),
+                                   ("cmoe", self.cpu_moe),
                                    ("mc (--moe-cache-mib)", self.moe_cache_mib is not None),
                                    ("cs (--moe-cache-cpu-share)", self.moe_cache_cpu_share is not None)) if on]
             if bad:
@@ -155,6 +174,18 @@ class Variant:
                 elif not draft:
                     warn.append(f"{self.spec_type}: no drafter configured for this model ([models.*].draft); "
                                 "running without --model-draft (works only if the GGUF has built-in MTP heads)")
+        if self.has_draft_fields and not self.spec_type:
+            raise VariantError(f"{self.name}: sdmin / dK / dV / dmoe need a speculative type (sd<N><type>)")
+        if self.spec_n_min is not None:
+            out += ["--spec-draft-n-min", str(self.spec_n_min)]
+        if self.draft_ctk:
+            out += ["-ctkd", self.draft_ctk]
+        if self.draft_ctv:
+            out += ["-ctvd", self.draft_ctv]
+        if self.draft_n_cpu_moe is not None:
+            out += ["-ncmoed", str(self.draft_n_cpu_moe)]
+        if self.draft_cpu_moe:
+            out += ["-cmoed"]
         out += list(self.extra)
         return out, warn
 
@@ -168,6 +199,9 @@ _TOKEN_RES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"mc(\d+)"), "mc"),
     (re.compile(r"cs(\d+)"), "cs"),
     (re.compile(r"fitt(\d+)"), "fitt"),
+    (re.compile(r"sdmin(\d+)"), "sdmin"),
+    (re.compile(r"dmoe(\d+)"), "dmoe"),
+    (re.compile(r"d([KV])([a-z0-9]+)"), "dkv"),
     (re.compile(r"sd(\d+)([a-z][a-z0-9]*)"), "sd"),
     (re.compile(r"lm([A-Z]+)"), "lm"),
     (re.compile(r"([KV])([a-z0-9]+)"), "kv"),
@@ -205,6 +239,9 @@ def decode(name: str) -> Variant:
         if tok == "nohost":
             put("no_host", True, tok)
             continue
+        if tok == "dcmoe":
+            put("draft_cpu_moe", True, tok)
+            continue
         for rx, kind in _TOKEN_RES:
             m = rx.fullmatch(tok)
             if not m:
@@ -231,6 +268,16 @@ def decode(name: str) -> Variant:
                                        f"(known: {', '.join(SPEC_TYPES)})")
                 put("spec_type", st, tok)
                 put("spec_n_max", int(m.group(1)), tok)
+            elif kind == "sdmin":
+                put("spec_n_min", int(m.group(1)), tok)
+            elif kind == "dmoe":
+                put("draft_n_cpu_moe", int(m.group(1)), tok)
+            elif kind == "dkv":
+                ct = CACHE_TYPES.get(m.group(2))
+                if ct is None:
+                    raise VariantError(f"{name}: {tok}: unknown cache type {m.group(2)!r} "
+                                       f"(known: {', '.join(CACHE_TYPES)})")
+                put("draft_ctk" if m.group(1) == "K" else "draft_ctv", ct, tok)
             elif kind == "lm":
                 lm = LOAD_MODES.get(m.group(1))
                 if lm is None:
@@ -254,7 +301,8 @@ def decode(name: str) -> Variant:
 
 
 def encode(v: Variant) -> str:
-    """Canonical name. Order: fa, K, V, batch (default | b/ub), moe/cmoe, mc, cs, lm, nohost, fitt, sd."""
+    """Canonical name. Order: fa, K, V, batch (default | b/ub), moe/cmoe, mc, cs, lm, nohost, fitt, sd, sdmin,
+    dK, dV, dmoe/dcmoe."""
     if v.is_empty:
         return EMPTY_NAME
     toks: list[str] = []
@@ -292,6 +340,17 @@ def encode(v: Variant) -> str:
         if v.spec_type not in SPEC_TOKENS:
             raise VariantError(f"spec type {v.spec_type!r} has no token")
         toks.append(f"sd{v.spec_n_max if v.spec_n_max is not None else 3}{SPEC_TOKENS[v.spec_type]}")
+    if v.spec_n_min is not None:
+        toks.append(f"sdmin{v.spec_n_min}")
+    for side, ct in (("K", v.draft_ctk), ("V", v.draft_ctv)):
+        if ct:
+            if ct not in CACHE_TOKENS:
+                raise VariantError(f"cache type {ct!r} has no token (known: {', '.join(CACHE_TOKENS)})")
+            toks.append("d" + side + CACHE_TOKENS[ct])
+    if v.draft_n_cpu_moe is not None:
+        toks.append(f"dmoe{v.draft_n_cpu_moe}")
+    if v.draft_cpu_moe:
+        toks.append("dcmoe")
     if v.extra:
         from mse_llm.util import stable_hash
 
@@ -313,10 +372,16 @@ _FLAG_FIELDS = {
     "--moe-cache-mib": "moe_cache_mib", "--moe-cache-cpu-share": "moe_cache_cpu_share",
     "-lm": "load_mode", "--load-mode": "load_mode",
     "-fitt": "fit_target", "--fit-target": "fit_target",
-    "--spec-type": "spec_type", "--spec-draft-n-max": "spec_n_max",
+    "--spec-type": "spec_type", "--spec-draft-n-max": "spec_n_max", "--spec-draft-n-min": "spec_n_min",
+    "-ctkd": "draft_ctk", "--cache-type-k-draft": "draft_ctk", "--spec-draft-type-k": "draft_ctk",
+    "-ctvd": "draft_ctv", "--cache-type-v-draft": "draft_ctv", "--spec-draft-type-v": "draft_ctv",
+    "-ncmoed": "draft_n_cpu_moe", "--n-cpu-moe-draft": "draft_n_cpu_moe",
+    "--spec-draft-n-cpu-moe": "draft_n_cpu_moe", "--spec-draft-ncmoe": "draft_n_cpu_moe",
 }
-_BOOL_FLAGS = {"-cmoe": "cpu_moe", "--cpu-moe": "cpu_moe", "--no-host": "no_host"}
-_INT_FIELDS = {"b", "ub", "n_cpu_moe", "moe_cache_mib", "fit_target", "spec_n_max"}
+_BOOL_FLAGS = {"-cmoe": "cpu_moe", "--cpu-moe": "cpu_moe", "--no-host": "no_host",
+               "-cmoed": "draft_cpu_moe", "--cpu-moe-draft": "draft_cpu_moe", "--spec-draft-cpu-moe": "draft_cpu_moe"}
+_INT_FIELDS = {"b", "ub", "n_cpu_moe", "moe_cache_mib", "fit_target", "spec_n_max", "spec_n_min",
+               "draft_n_cpu_moe"}
 # flags that belong to the command, not the variant
 _IGNORED_WITH_VALUE = {"-m", "--model", "-c", "--ctx-size", "-t", "--threads", "-np", "--parallel", "-ngl",
                        "--gpu-layers", "--n-gpu-layers", "--host", "--port", "-md", "--model-draft",

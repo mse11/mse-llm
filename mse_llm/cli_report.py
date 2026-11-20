@@ -17,7 +17,7 @@ def _select_options(f):
     for opt in reversed([
         click.option("--sweep", "sweep_", default=None, help="Runs of this sweep (in its entry order)."),
         click.option("--model", default=None, help="Model key (substring)."),
-        click.option("--tool", type=click.Choice(["bench", "benchy"]), default=None),
+        click.option("--tool", type=click.Choice(["bench", "benchy", "quality"]), default=None),
         click.option("--build", default=None, help="Build id or llama.cpp commit (prefix)."),
         click.option("--runs", "run_ids", multiple=True, help="Run ids (repeatable; overrides the filters)."),
         click.option("--last", type=int, default=None, help="Only the last N runs."),
@@ -133,6 +133,8 @@ def report_table(ctx: Ctx, sweep_, model, tool, build, run_ids, last, all_runs, 
     else:
         cols = ["variant", "ctx", "pp_tps", "tg_tps", "ttft_ms", "vram_peak_mib", "server_shared_mib", "spill_mib",
                 "duration_s", "status", "note"]
+        extra = [c for c in ("acceptance", "mean_kld", "same_top_p") if any(r.get(c) is not None for r in rows)]
+        cols[4:4] = extra
     best_pp, best_tg = (None, None) if per_test else (best(rows, "pp_tps"), best(rows, "tg_tps"))
 
     def cell(r, c):
@@ -144,6 +146,10 @@ def report_table(ctx: Ctx, sweep_, model, tool, build, run_ids, last, all_runs, 
             return s
         if c in ("vram_peak_mib", "server_shared_mib", "spill_mib", "duration_s"):
             return _fmt(v, 0)
+        if c in ("acceptance", "same_top_p"):
+            return "" if v is None else f"{v * 100:.1f} %"
+        if c == "mean_kld":
+            return "" if v is None else f"{v:.5f}"
         return "" if v is None else str(v)
 
     if fmt == "md":
@@ -159,6 +165,50 @@ def report_table(ctx: Ctx, sweep_, model, tool, build, run_ids, last, all_runs, 
     if not per_test:
         console.print("[dim]★ = best PP / TG of the ok runs. MiB columns: peak; spill = shared memory beyond "
                       "fit's host buffers (> ~100 = a real spill).[/]")
+
+
+@report.command("spec")
+@_select_options
+@click.option("--chart", "with_chart", is_flag=True,
+              help="Also write the PNG (TG + acceptance vs n_max; per position).")
+@click.option("-o", "--out", type=click.Path(dir_okay=False), default=None,
+              help="PNG path (default: results/reports/<name>/<name>-spec.png).")
+@json_option
+@pass_ctx
+def report_spec(ctx: Ctx, sweep_, model, tool, build, run_ids, last, all_runs, with_chart, out) -> None:
+    """Speculative decoding: acceptance rate, mean accepted length and acceptance per draft position next to TG,
+    with the TG of the same variant without spec (flagged when spec is slower)."""
+    from mse_llm.cli_bench import spec_text
+    from mse_llm.report import reports_dir
+    from mse_llm.report.spec import chart, spec_rows
+
+    sel = _select(ctx, sweep_, model, tool or "benchy", build, run_ids, last, all_runs)
+    rows = spec_rows(sel.runs)
+    if not rows:
+        raise click.ClickException("no speculative-decoding runs among the selected ones (benchy runs of sd* "
+                                   "variants record acceptance)")
+    png = None
+    if with_chart:
+        name = sweep_ or sel.title
+        png = chart(rows, Path(out) if out else reports_dir(name) / f"{Path(name).name}-spec.png", title=sel.title)
+    if ctx.json:
+        click.echo(json.dumps({"rows": rows, "png": str(png) if png else None}, indent=2))
+        return
+    t = Table("variant", "prompts", "TG t/s", "no-spec TG", "speedup", "acceptance", "temp", title=sel.title)
+    for r in rows:
+        sp = spec_text({"drafted": r["drafted"], "acceptance_rate": r["acceptance_rate"],
+                        "mean_accept_len": r["mean_accept_len"], "accept_rate_per_pos": r["accept_rate_per_pos"]})
+        speed = "-" if r["speedup"] is None else f"x{r['speedup']:.2f}"
+        if r["slower_than_baseline"]:
+            speed = f"[red]{speed} slower[/]"
+        t.add_row(escape(r["variant"]), r["prompts"], _fmt(r["tg_tps"], 2), _fmt(r["baseline_tg"], 2), speed,
+                  escape(sp), "-" if r["temp"] is None else str(r["temp"]))
+    console.print(t)
+    console.print("[dim]acceptance = accepted / drafted; len = tokens per target-model step (1 + accepted / "
+                  "steps); per pos = accepted at draft position N / steps (under ~0.3 a longer draft stops "
+                  "paying off).[/]")
+    if png:
+        console.print(f"[green]✓[/] chart → [bold]{escape(str(png))}[/]")
 
 
 @report.command("prompt")

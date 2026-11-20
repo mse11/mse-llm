@@ -72,7 +72,7 @@ class SectionedGroup(click.Group):
 
     SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("Inference", ("serve", "presets", "fit", "predict")),
-        ("Benchmark", ("bench", "benchy", "sweep", "results", "report", "eval")),
+        ("Benchmark", ("bench", "benchy", "sweep", "quality", "results", "report", "eval")),
         ("System", ("doctor", "hw", "monitor", "notify", "help")),
         ("Config", ("models", "variants")),
         ("Build", ("build",)),
@@ -1201,6 +1201,7 @@ def _print_fit(rep) -> None:
 from mse_llm import cli_bench as _cli_bench  # noqa: E402,F401  (registers bench, benchy, sweep, results)
 from mse_llm import cli_monitor as _cli_monitor  # noqa: E402,F401  (registers monitor + notify)
 from mse_llm import cli_predict as _cli_predict  # noqa: E402,F401  (registers predict, results calibrate, sweep search)
+from mse_llm import cli_quality as _cli_quality  # noqa: E402,F401  (registers quality)
 from mse_llm import cli_report as _cli_report  # noqa: E402,F401  (registers report, results compare/export)
 from mse_llm import cli_serve as _cli_serve  # noqa: E402,F401  (registers serve + presets)
 

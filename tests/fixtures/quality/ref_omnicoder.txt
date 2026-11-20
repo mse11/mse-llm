@@ -1,0 +1,5 @@
+0.03.638.810 I perplexity: saving all logits to REF.kld
+0.03.638.821 I perplexity: tokenizing the input ..
+0.04.083.969 I perplexity: tokenization took 445.141 ms
+0.04.084.586 I perplexity: calculating perplexity over 2 chunks, n_ctx=2048, batch_size=2048, n_seq=1
+0.06.420.606 I Final estimate: PPL = 2.2080 +/- 0.08565

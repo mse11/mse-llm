@@ -85,10 +85,11 @@ def test_sweep_entries_status_annotations_and_matrix():
 def test_config_has_one_sweep_per_bash_function(cfg):
     text = (project_root() / "llama_cpp_benchmark.sh").read_text(encoding="utf-8")
     funcs = set(re.findall(r"^(run_(?:BENCH|BENCHY_WITH_SERVER|INSPECT)_\w+)\(\)", text, re.M))
-    assert {sw.bash for sw in cfg.sweeps.values()} == funcs
+    ported = {k: sw for k, sw in cfg.sweeps.items() if sw.bash}        # M10+ adds sweeps with no bash function
+    assert {sw.bash for sw in ported.values()} == funcs
     # every extras_list entry, commented out or not, is a sweep entry
     arrays = "\n".join(m.group(1) for m in re.finditer(r"local -a extras_list=\((.*?)\n\s*\)", text, re.S))
-    assert sum(len(sw.variants) for sw in cfg.sweeps.values()) == len(re.findall(r'^\s*#?\s*"extra_\w+"', arrays,
+    assert sum(len(sw.variants) for sw in ported.values()) == len(re.findall(r'^\s*#?\s*"extra_\w+"', arrays,
                                                                                  re.M))
     q = cfg.sweeps["Qwen36_35B_A3B_UD_Q4_K_M_MTP_bench"].entries()
     assert [e.v for e in q if e.status == "on"] == ["fa_Kq8_Vq8_default_moe41", "fa_Kq8_Vq4_default_moe41"]
@@ -249,7 +250,7 @@ def test_cli_sweep_list_show_and_dry_run(store):
     r = CliRunner().invoke(main, ["--json", "sweep", "list"])
     assert r.exit_code == 0, r.output
     names = {s["name"] for s in json.loads(r.output)}
-    assert "omnicoder_9b_bench" in names and len(names) == 9
+    assert "omnicoder_9b_bench" in names and len(names) == 10      # 9 bash functions + the M10 spec sweep
     r = CliRunner().invoke(main, ["sweep", "run", "Qwen36_35B_A3B_UD_Q4_K_M_MTP_bench", "--dry-run"])
     assert r.exit_code == 0, r.output
     assert "2 job(s) to run, 8 skipped" in r.output
@@ -270,7 +271,7 @@ def test_cli_bench_and_benchy_dry_run(store):
     assert r.exit_code == 0, r.output
     (c,) = json.loads(r.output)
     assert c["argv"][c["argv"].index("--concurrency") + 1] == "2" and "--save-result" in c["argv"]
-    assert c["server"]["argv"][-1] == "18099" and c["params"]["pp"] == [512]
+    assert c["server"]["argv"][-2:] == ["18099", "--metrics"] and c["params"]["pp"] == [512]
 
 
 def test_cli_results_list_and_show(cfg, store):

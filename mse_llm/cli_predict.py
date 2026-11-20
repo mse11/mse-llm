@@ -294,7 +294,8 @@ def _pct(x: float) -> str:
 @click.option("--patience", type=int, default=2, show_default=True,
               help="Stop a stage after this many steps without a gain > 1 %.")
 @click.option("--max-runs", type=int, default=12, show_default=True, help="New runs at most (reused runs are free).")
-@click.option("--no-step-back", is_flag=True, help="Take the best run even when it is right next to the edge.")
+@click.option("--no-step-back", is_flag=True,
+              help="Take the best run even when it is right next to a run that failed / spilled.")
 @click.option("--no-reuse", is_flag=True, help="Run every step, even when an ok result for this build exists.")
 @click.option("--tg", type=int, multiple=True, help="Generated tokens (default: [defaults].bench_tg).")
 @click.option("--apply", "apply_", is_flag=True,
@@ -309,7 +310,8 @@ def _pct(x: float) -> str:
 def sweep_search(ctx: Ctx, model, tool, goal, axes, steps, patience, max_runs, no_step_back, no_reuse, tg, apply_,
                  dry_run, output, no_guard, mem_cap, port, allow_low_power, **kw) -> None:
     """Safe automatic search for the sweet spot: predict picks the order, each stage steps from the safe side
-    toward the edge, never starts a predicted no-fit, stops at the first spill; winner one step back."""
+    toward the edge, never starts a predicted no-fit, stops at the first spill; the winner steps back one only
+    from a run that really failed."""
     from mse_llm import bench as bb
     from mse_llm import predict as pr
     from mse_llm import results as rs
@@ -410,7 +412,7 @@ def print_search(res, goal: str) -> None:
                       escape(((s.run_id or "") + (" (reused)" if s.reused else "") + "  " + (s.reason or "")).strip()))
         console.print(t)
         if st.stepped_back:
-            console.print(f"  [dim]best run was right next to the edge ({escape(st.edge or '')}): one step back[/]")
+            console.print(f"  [dim]best run was right next to a failed run ({escape(st.edge or '')}): one step back[/]")
     w = res.winner_step
     if res.winner and w:
         console.print(f"\n[bold green]winner[/] {escape(res.winner)}: TG {w.tg or 0:.2f} t/s, PP {w.pp or 0:.0f} t/s"

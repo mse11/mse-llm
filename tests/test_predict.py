@@ -328,7 +328,7 @@ def do_search(pred, **kw):
     return asyncio.run(se.search(pred, model=GEMMA, **kw))
 
 
-def test_search_never_starts_a_predicted_no_fit_and_steps_back(cfg):
+def test_search_never_starts_a_predicted_no_fit_and_keeps_the_best(cfg):
     pred = predict(cfg)
     run, ran = fake_runs()
     res = do_search(pred, run=run, axes=["ncmoe", "ub"])
@@ -336,7 +336,8 @@ def test_search_never_starts_a_predicted_no_fit_and_steps_back(cfg):
     assert ncm.values[0] == 30 and ncm.values[-1] == 10     # one past the lowest fit (11): the predicted edge
     assert ncm.steps[-1].status.startswith("predicted") and ncm.edge == ncm.steps[-1].variant
     assert all(pred.at(int(re.search(r"moe(\d+)", n).group(1)), 512).fits for n in ran)
-    assert ncm.stepped_back and ncm.winner != ncm.steps[-2].variant      # best (moe11) is next to the edge
+    # best (moe11) is next to an edge that is only predicted: no step back (it passed the fit check with margin)
+    assert not ncm.stepped_back and not ncm.edge_real and ncm.winner == ncm.steps[-2].variant
     assert res.winner and not res.any_spill
     ubst = res.stages[1]
     assert ubst.steps[0].reused                            # the stage starts from the winner already measured
@@ -349,7 +350,7 @@ def test_search_stops_at_the_first_spill(cfg):
     st = res.stages[0]
     assert st.edge == "fa_Kq8_Vq8_default_moe20" and "aborted" in st.edge_reason
     assert "fa_Kq8_Vq8_default_moe15" not in ran          # nothing past the spill
-    assert st.stepped_back and st.winner == "fa_Kq8_Vq8_default_moe30"   # one step back from moe25
+    assert st.edge_real and st.stepped_back and st.winner == "fa_Kq8_Vq8_default_moe30"   # back from moe25
     assert res.any_spill
 
 

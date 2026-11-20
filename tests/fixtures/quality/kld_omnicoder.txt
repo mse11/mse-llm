@@ -1,0 +1,42 @@
+0.01.546.836 I kl_divergence: computing over 2 chunks, n_ctx=2048, batch_size=2048, n_seq=1
+0.02.391.266 I kl_divergence: 0.84 seconds per pass - ETA 0.02 minutes
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+   1       2.0919 ±    0.1087       0.00064 ±    0.00071       0.00028 ±    0.00002     0.517 ±  0.028 %    99.413 ±  0.239 %
+   2       2.2083 ±    0.0856       0.00014 ±    0.00056       0.00036 ±    0.00004     0.672 ±  0.092 %    99.316 ±  0.182 %
+====== Perplexity statistics ======
+Mean PPL(Q)                   :   2.208339 ±   0.085644
+Mean PPL(base)                :   2.208025 ±   0.085651
+Cor(ln(PPL(Q)), ln(PPL(base))):  99.99%
+Mean ln(PPL(Q)/PPL(base))     :   0.000142 ±   0.000564
+Mean PPL(Q)/PPL(base)         :   1.000142 ±   0.000564
+Mean PPL(Q)-PPL(base)         :   0.000314 ±   0.001246
+====== KL divergence statistics ======
+Mean    KLD:   0.000361 ±   0.000040
+Maximum KLD:   0.074412
+99.9%   KLD:   0.010465
+99.0%   KLD:   0.003057
+95.0%   KLD:   0.001437
+90.0%   KLD:   0.000933
+Median  KLD:   0.000044
+10.0%   KLD:   0.000000
+ 5.0%   KLD:  -0.000000
+ 1.0%   KLD:  -0.000002
+ 0.1%   KLD:  -0.000017
+Minimum KLD:  -0.000021
+====== Token probability statistics ======
+Mean    Δp: -0.018 ± 0.015 %
+Maximum Δp:  6.408%
+99.9%   Δp:  3.176%
+99.0%   Δp:  1.606%
+95.0%   Δp:  0.789%
+90.0%   Δp:  0.442%
+75.0%   Δp:  0.049%
+Median  Δp:  0.000%
+25.0%   Δp: -0.039%
+10.0%   Δp: -0.467%
+ 5.0%   Δp: -0.885%
+ 1.0%   Δp: -1.922%
+ 0.1%   Δp: -4.353%
+Minimum Δp: -15.569%
+RMS Δp    :  0.672 ± 0.092 %
+Same top p: 99.316 ± 0.182 %

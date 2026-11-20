@@ -135,13 +135,25 @@ What has been decided, checked or changed so far. The sections below have the de
   `doctor` warn on a quiet / power-saving plan, and calibration uses only runs of the current plan. `bench`,
   `benchy`, `sweep run` and `sweep search` stop on battery or a quiet plan (`--allow-low-power` to run anyway).
 
-**M9 acceptance: still to do (needs a performance power plan; the quiet-plan runs don't count)**
-- [ ] `uv run mse-llm sweep search gemma_4_26B_A4b_QAT_UD_Q4_K_XL`: winner found, no run spilled
-- [ ] `uv run mse-llm sweep search Qwen36_35B_A3B_UD_Q4_K_M_MTP`: winner found, no run spilled
-- [ ] `uv run mse-llm results calibrate`: TG and PP leave-one-out within ~15 % for both models
-- [ ] gemma QAT on `--engine cuda_flash` vs `cuda_flash-without-zen4-avx512x`: is build ffc87c3a7 itself slower
-  than ad1b88ca0 (bash era: QAT moe31 TG 27.4 / PP 923)?
-- [ ] Results into `docs/PARITY.md` and the M9 row below; drop "Acceptance pending"
+**M9 acceptance: done 2026-11-20** (performance plan; details in `docs/PARITY.md`): both searches found a winner
+without a spill (gemma QAT `fa_Kq8_Vq8_default_moe10`, Qwen3.6-35B MTP `fa_Kq8_Vq8_b4096_ub4096_moe37`);
+`results calibrate` leave-one-out median 3.9 %, 41 of 44 within 15 %; build ffc87c3a7 is not slower than the
+comparison build (gemma moe30 TG 36.8 vs 34.9). Decided: the winner steps back one only from a run that really
+failed, not from a predicted edge (that had cost gemma 25 % TG: moe15 50.8 instead of moe10 67.9).
+
+**Found while implementing M10 (2026-11-20)** (details in `docs/PARITY.md`, milestone log)
+* **The KLD reference is half the size §4.5 estimated.** llama-perplexity stores only the second half of each
+  chunk's log-probs (`n_ctx - 1 - n_ctx/2` tokens × (vocab + 4) × 2 bytes), and the Qwen3.6 vocab is 248k, not 152k:
+  8 chunks × 8192 = **15.2 GiB** for Qwen3.6 / OmniCoder, 16.0 GiB for gemma 4 (not 34 / 20 GB).
+* **Reference runs need `-lm mmap`.** With `-lm none` ([defaults].load_mode) llama-perplexity copies the whole
+  24 GB 35B model into private memory (37 GB with its 8 GB logits buffer); with ~48 GB already committed by other
+  apps the guard stopped it at 95 % commit. Quality runs now load with mmap (file-backed pages don't count against
+  the commit limit; the load mode doesn't change the logits).
+* **The noise floor of a dense model is below llama-perplexity's printed resolution** (OmniCoder, `-nkvo` vs KV on
+  the GPU: mean KLD 0.000000, 99 % 0.00004), so "2x the floor" alone would call every KV quant a loss. The verdict
+  uses the floor (at least 1e-6) and the ±error, then absolute levels: negligible < 0.001, small < 0.01.
+* llama-benchy only fetches its prompt book over HTTP (`requests.get`), so the code prompt set is served from a
+  local `http.server` for the duration of the run.
 
 **Later**
 * Strata as a second engine (managed mode, `/v1/models` probe, API key, `/metrics`), compared with
@@ -1912,8 +1924,8 @@ come first:
 | **M6** | `monitor/` (NVML, PDH, psutil) + memory guard + **freeze prevention** (§9 item 7: live spill / RAM / commit stop with the guard rules of §5, optional Job Object cap) + notify | Peaks match the bash monitor within tolerance; a forced over-commit run is stopped before the laptop stalls |
 | **M7** | `bench` (llama-bench jsonl) + `benchy` (json) + results store in `results/` + `sweep run --resume` | Old sweeps from the script run from TOML; results JSON written. As built: all 9 bash group functions are `[sweeps.*]` (161 entries, comments as status / note / tag), `sweep list/show/run`, `results list/show`, fit pre-check per job, guard rule D (hang) |
 | **M8** | `report chart` (parity 5-axis + legacy log import), `report table`, `report prompt` | Chart from new results matches the old chart for the same data; old `.txt` logs still chart. As built: pixel-identical PNG to the bash plotter on the same log; old `.txt` logs and the `_RESULTS/*.html` pages chart; plus `results compare` / `results export --csv` |
-| **M9** | §4.6 `predict` (GGUF expert sizes, `llama-fit-params` grid, roofline TG/PP, calibration from M7 runs) + §9 item 6 `sweep search` (safe side first, stops at the first spill, winner one step back) | After calibration, predicted TG/PP are within ~15 % of measured for 2 models; `sweep search` finds a sweet spot without a single run that spills. As built: `predict`, `results calibrate` (leave-one-out error), `sweep search` (ncmoe / ub stages; K/V and spec stages wait for M10); gemma QAT search: 7 runs, no spill. **Acceptance pending:** the runs were under the Legion Quiet power plan (TG varied 11-32 t/s for one config), re-run under a performance plan |
-| **M10** | §4.5: `quality kld-ref/kld/floor` (llama-perplexity, size preview, wikitext-2 + code corpus, reference fallbacks); `--metrics` on bench servers + `/metrics` delta scraping, spec log parsing, `RunResult.quality` / `.spec` | KLD table for 3 K/V variants of one model, with noise floor; a `sd{2,3,4}mtp` benchy sweep shows acceptance rate + per-position acceptance next to TG |
+| **M9** | §4.6 `predict` (GGUF expert sizes, `llama-fit-params` grid, roofline TG/PP, calibration from M7 runs) + §9 item 6 `sweep search` (safe side first, stops at the first spill, winner one step back) | After calibration, predicted TG/PP are within ~15 % of measured for 2 models; `sweep search` finds a sweet spot without a single run that spills. As built: `predict`, `results calibrate` (leave-one-out error), `sweep search` (ncmoe / ub stages; K/V and spec stages wait for M10); gemma QAT search: 7 runs, no spill. **Done 2026-11-20** under a performance plan: gemma QAT and Qwen3.6-35B MTP searches without a spill, leave-one-out median 3.9 %, 41/44 within 15 % (the first runs were under Legion Quiet Mode and don't count) |
+| **M10** | §4.5: `quality kld-ref/kld/floor` (llama-perplexity, size preview, wikitext-2 + code corpus, reference fallbacks); `--metrics` on bench servers + `/metrics` delta scraping, spec log parsing, `RunResult.quality` / `.spec` | KLD table for 3 K/V variants of one model, with noise floor; a `sd{2,3,4}mtp` benchy sweep shows acceptance rate + per-position acceptance next to TG As built: `quality kld-ref / kld / floor / list / clean / corpus`, `report spec [--chart]`, `sweep run --with-kld`, benchy `--prompts` / `prompt_sets`, draft-side tokens (`sdmin`, `dK`/`dV`, `dmoe`); quality runs use `-lm mmap`. **Done 2026-11-20:** Qwen3.6-35B MTP KLD (floor < 1e-6): Kq8_Vq8 0.0028, Kf8_Vf8 0.0036, Kq8_Vq4 0.0046, Kq4_Vq4 0.0064; sweep `Qwen36_35B_A3B_UD_Q4_K_M_MTP_spec`: sd3mtp x1.30 TG (acceptance 77 %, .88/.78/.62), sd4mtp slower than no spec (flagged) |
 | **M11** | MoE-cache axes (§4.4): `cmoe/mc/cs/lm*/Kf8` tokens, staged sweeps, server-log cache stats, `tune moe-cache` wrapper | Stage 0–2 sweep for Qwen36 MTP completes; chart shows TG/PP/duration/VRAM/hit rate per variant |
 | **M12** | `eval` (inspect-ai: mmlu_pro, gpqa_diamond, math_aime_24 locally); `eval --remote-client` + `eval import` for SWE-bench from a Linux VM/host (§7.1) | mmlu_pro `--limit 20` completes against background server; a VirtualBox Linux VM reaches the Windows server (`curl /v1/models`), runs a few SWE-bench (Lite/mini) tasks, and `eval import` joins the result with server metrics |
 | **M13** | Retire the bash runner (§10.1): parity checklist complete, final acceptance runs, delete `llama_cpp_benchmark.sh` + `llama_cpp_presets.ini` | Every row in `docs/PARITY.md` is ✓ or "dropped + reason" approved by you; both files removed in one commit, recoverable from git history |

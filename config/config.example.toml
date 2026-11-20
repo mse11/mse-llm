@@ -188,6 +188,17 @@ variants = [
   { v = "fa_Kq8_Vq4_default_moe30", status = "skip", note = "PC freeze (CTX==65536)", tag = "freeze" },
 ]
 
+[sweeps.Qwen36_35B_A3B_UD_Q4_K_M_MTP_spec]
+# M10: speculative-decoding acceptance per draft length (no bash function). The no-spec entry is the baseline that
+# `report spec` compares TG with; prose (benchy's book) and code (llama.cpp sources) run separately.
+model = "Qwen36_35B_A3B_UD_Q4_K_M_MTP"
+tool = "benchy"
+ctx = 16384
+pp = [2048]
+tg = [128]
+prompt_sets = ["prose", "code"]
+variants = ["fa_Kq8_Vq8_default_moe34", "fa_Kq8_Vq8_default_moe34_sd{2,3,4}mtp"]
+
 [sweeps.Qwen36_28B_REAP20_A3B_Q4_K_M_bench]
 bash = "run_BENCH_Qwen36_28B_REAP20_A3B_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x"
 model = "Qwen36_28B_REAP20_A3B_Q4_K_M"

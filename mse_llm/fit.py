@@ -54,7 +54,7 @@ class FitError(RuntimeError):
 def fit_params_argv(cfg: Config, engine: str | None, model_path: str, v: Variant, ctx: int) -> list[str]:
     """llama-fit-params for the main model: the variant's flags minus --spec-* (which it rejects)."""
     _, eng = cfg.engine(engine)
-    plain = replace(v, spec_type=None, spec_n_max=None)
+    plain = v.without_spec()
     flags, _ = plain.flags("server")
     argv = [str(exe(eng.bin_path() / "llama-fit-params")), "-m", model_path, "-c", str(ctx),
             "-ngl", str(cfg.defaults.ngl), *flags]
@@ -152,12 +152,14 @@ def draft_parts(model_key: str | None, drafter: str | None, v: Variant, ctx: int
         if not main_info.nextn_layers:
             return [Part("drafter", None, NOT_COUNTED,
                          f"{where} = builtin, but the GGUF has no MTP / NextN layers")]
-        kv = kv_mib(main_info, main_info.nextn_layers, ctx, DRAFT_KV_DEFAULT, DRAFT_KV_DEFAULT)
+        kv = kv_mib(main_info, main_info.nextn_layers, ctx, v.draft_ctk or DRAFT_KV_DEFAULT,
+                    v.draft_ctv or DRAFT_KV_DEFAULT)
         comp = ub * logits_mib_per_ub_token(main_info)
         return [Part("draft weights", 0, MEASURED,
                      f"built-in MTP ({main_info.nextn_layers} layer): inside the main model weights"),
                 Part("draft KV+compute", kv + comp, ESTIMATED,
-                     f"KV {kv:.0f} ({main_info.nextn_layers} layer, f16, ctx {ctx}) + compute {comp:.0f} (ub {ub})")]
+                     f"KV {kv:.0f} ({main_info.nextn_layers} layer, {v.draft_ctk or DRAFT_KV_DEFAULT}, "
+                     f"ctx {ctx}) + compute {comp:.0f} (ub {ub})")]
     p = Path(drafter)
     try:
         di = info_of(str(p))
@@ -166,7 +168,7 @@ def draft_parts(model_key: str | None, drafter: str | None, v: Variant, ctx: int
     except (OSError, gguf.GgufError) as e:
         return [Part("drafter", None, NOT_COUNTED, f"can't read draft GGUF: {e}")]
     own_kv = max(0, (di.n_layers or 0) - di.shared_kv_layers)
-    kv = kv_mib(di, own_kv, ctx, DRAFT_KV_DEFAULT, DRAFT_KV_DEFAULT)
+    kv = kv_mib(di, own_kv, ctx, v.draft_ctk or DRAFT_KV_DEFAULT, v.draft_ctv or DRAFT_KV_DEFAULT)
     comp = ub * logits_mib_per_ub_token(di)
     kv_note = (f"KV {kv:.0f} ({own_kv} layers, f16)" if own_kv
                else f"KV 0 (all {di.n_layers} layers share the main model's KV)")

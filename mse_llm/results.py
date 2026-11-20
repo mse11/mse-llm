@@ -71,7 +71,7 @@ class RunResult(_M):
     key: str                               # same key + same build = same measurement (sweep --resume)
     timestamp: str
     sweep: str | None = None
-    tool: Literal["bench", "benchy", "eval"]
+    tool: Literal["bench", "benchy", "eval", "quality"]
     engine: str
     model: str
     model_path: str | None = None
@@ -95,6 +95,9 @@ class RunResult(_M):
     fit: dict[str, Any] | None = None
     startup: dict[str, Any] | None = None
     monitor: dict[str, Any] | None = None
+    # M10: KLD / PPL vs a reference (tool quality: mode ref | kld | floor), speculative-decoding acceptance (benchy)
+    quality: dict[str, Any] | None = None
+    spec: dict[str, Any] | None = None
     logs: dict[str, str] = Field(default_factory=dict)
 
     def index_line(self) -> dict[str, Any]:
@@ -105,10 +108,24 @@ class RunResult(_M):
                 "ctx": self.ctx, "build": self.build.get("id"), "commit": (self.build.get("commit") or "")[:9] or None,
                 "hw": self.hw.get("hash"), "pp_tps": m.get("pp_tps"), "tg_tps": m.get("tg_tps"),
                 "n_prompt": m.get("n_prompt"), "vram_peak_mib": _peak(mon, "vram_used_mib"),
-                "spill_mib": mon.get("spill_mib"), "status": self.status, "reason": self.reason}
+                "spill_mib": mon.get("spill_mib"), "status": self.status, "reason": self.reason,
+                **({"prompts": self.params["prompts"]} if self.params.get("prompts") else {}),
+                **_quality_index(self.quality), **_spec_index(self.spec)}
 
     def path(self, root: Path | None = None) -> Path:
         return (root or results_root()) / "runs" / self.timestamp[:7] / f"{self.run_id}.json"
+
+
+def _quality_index(q: dict[str, Any] | None) -> dict[str, Any]:
+    if not q:
+        return {}
+    return {k: q.get(k) for k in ("mode", "mean_kld", "same_top_p", "ref_id") if q.get(k) is not None}
+
+
+def _spec_index(s: dict[str, Any] | None) -> dict[str, Any]:
+    if not s:
+        return {}
+    return {"acceptance_rate": s.get("acceptance_rate"), "mean_accept_len": s.get("mean_accept_len")}
 
 
 def _peak(mon: dict[str, Any], key: str) -> float | None:

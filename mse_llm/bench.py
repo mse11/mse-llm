@@ -40,7 +40,8 @@ class Job:
     sweep: str | None = None
     note: str | None = None
 
-    def command(self, cfg: Config, *, port: int | None = None, save_result: str | None = None) -> Command:
+    def command(self, cfg: Config, *, port: int | None = None, save_result: str | None = None,
+                book_url: str | None = None) -> Command:
         from mse_llm.runners import bench_command, benchy_command
 
         p = self.params
@@ -50,7 +51,8 @@ class Job:
         if self.tool == "benchy":
             return benchy_command(cfg, self.model, self.variant, self.ctx, self.engine, pp=p.get("pp") or None,
                                   tg=p.get("tg") or None, depth=p.get("depth") or None, runs=p.get("runs"),
-                                  concurrency=p.get("concurrency") or None, port=port, save_result=save_result)
+                                  concurrency=p.get("concurrency") or None, port=port, save_result=save_result,
+                                  prompts=p.get("prompts"), book_url=book_url)
         raise ValueError(f"tool {self.tool!r} runs in a later milestone (eval: M12)")
 
     def key(self, cmd: Command) -> str:
@@ -151,16 +153,40 @@ def _tail_reason(lines: list[str], n: int = 3) -> str:
 async def run_job(cfg: Config, job: Job, opts: RunOpts, env: RunEnv | None = None) -> rs.RunResult:
     """Run one job to a RunResult (written to the store when opts.write). Never raises for a failed
     benchmark; Ctrl+C (CancelledError) stops the processes, records `aborted` and re-raises."""
-    from mse_llm import serve as sv
-
     env = env or RunEnv()
     t = rs.now()
     run_id = rs.new_run_id(job.tool, t)
     ts = t.isoformat(timespec="seconds")
     raw = rs.raw_dir(run_id)
     save = raw / "benchy.json" if job.tool == "benchy" else None
-    cmd = job.command(cfg, port=opts.port, save_result=str(save) if save else None)
+    book = None
+    prompts = job.params.get("prompts") if job.tool == "benchy" else None
+    if prompts not in (None, "prose"):
+        from mse_llm import quality as qq
+
+        try:
+            book = qq.TextServer(qq.prompt_text(cfg, prompts))
+        except (OSError, ValueError) as e:
+            cmd = job.command(cfg, port=opts.port, save_result=str(save) if save else None)
+            res = _base_result(cfg, job, cmd, env, run_id, ts)
+            res.status, res.reason = "failed", f"prompts {prompts}: {e}"
+            if opts.write:
+                rs.write_run(res)
+            return res
+    cmd = job.command(cfg, port=opts.port, save_result=str(save) if save else None,
+                      **({"book_url": book.url} if book else {}))
     res = _base_result(cfg, job, cmd, env, run_id, ts)
+    try:
+        return await _run_job(cfg, job, opts, env, cmd, res, raw, save)
+    finally:
+        if book is not None:
+            book.close()
+
+
+async def _run_job(cfg: Config, job: Job, opts: RunOpts, env: RunEnv, cmd: Command, res: rs.RunResult, raw: Path,
+                   save: Path | None) -> rs.RunResult:
+    from mse_llm import serve as sv
+
     t0 = time.monotonic()
 
     def done(status: str, reason: str | None = None) -> rs.RunResult:
@@ -329,7 +355,11 @@ async def _run_benchy(cfg: Config, job: Job, cmd: Command, res: rs.RunResult, ra
     h = ServerHandle(cmd.server.argv, port=port, client_host=eng.client_host,
                      ready_timeout=cfg.defaults.server_ready_timeout, log_path=slog, memory_cap_mib=opts.mem_cap_mib)
     h.proc.watchers.append(info.feed)
+    draft_lines: list[str] = []
+    h.proc.watchers.append(lambda ln: draft_lines.append(ln) if "draft acceptance" in ln else None)
     client = pr.Spawned(cmd.argv, log_path=blog, sink=opts.sink)
+    scraped: dict[str, dict | None] = {"before": None, "after": None}
+    spec_on = bool(job.variant.spec_type)
 
     async def trip(reason: str) -> None:
         opts.say(f"[red]■ memory guard:[/] {reason} → stopping the server and benchy")
@@ -353,12 +383,16 @@ async def _run_benchy(cfg: Config, job: Job, cmd: Command, res: rs.RunResult, ra
             if mon is not None and mon.tripped:
                 return
             opts.say(f"[dim]server ready after {ep.ready_s:.1f} s; running llama-benchy …[/]")
+            if spec_on:
+                scraped["before"] = await scrape_metrics(ep.root)
             try:
                 await client.start()
             except pr.ProcError as e:
                 res.reason = str(e)
                 return
             rc = await client.wait()
+            if spec_on:
+                scraped["after"] = await scrape_metrics(ep.root)
             if rc != 0 and not (mon is not None and mon.tripped):
                 res.reason = f"llama-benchy exit code {rc}: {_tail_reason(list(client.lines))}"
         except asyncio.CancelledError:
@@ -369,6 +403,8 @@ async def _run_benchy(cfg: Config, job: Job, cmd: Command, res: rs.RunResult, ra
             await h.stop()
 
     await _with_monitor(mon, lambda: h.proc.proc.pid if h.proc.proc is not None else None, body, trip)
+    if spec_on:
+        res.spec = spec_record(cfg, job, scraped["before"], scraped["after"], draft_lines)
     if save is not None and save.is_file():
         try:
             res.tests, binfo = parse_benchy(save)
@@ -377,6 +413,48 @@ async def _run_benchy(cfg: Config, job: Job, cmd: Command, res: rs.RunResult, ra
             res.logs["result"] = rs.rel(save) or str(save)
         except ValueError as e:
             res.reason = res.reason or f"benchy JSON unreadable: {e}"
+
+
+async def scrape_metrics(root: str) -> dict | None:
+    """GET /metrics (Prometheus text) -> parsed counters; None when the server has it off or doesn't answer."""
+    import httpx
+
+    from mse_llm.parsers.spec import parse_metrics
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as c:
+            r = await c.get(root + "/metrics")
+    except httpx.HTTPError:
+        return None
+    if r.status_code != 200:
+        return None
+    return parse_metrics(r.text)
+
+
+SAMPLING_KEYS = ("temp", "top-k", "top-p", "min-p", "repeat-penalty")
+
+
+def spec_record(cfg: Config, job: Job, before: dict | None, after: dict | None,
+                log_lines: list[str]) -> dict:
+    """RunResult.spec (§4.5): the /metrics delta over the benchy run (per draft position), else the summed slot
+    log lines; plus what produced it (type, n_max, drafter, sampling: a high temperature lowers acceptance)."""
+    from mse_llm.parsers import spec as sp
+
+    v = job.variant
+    _, m = cfg.model(job.model)
+    s = sp.spec_from_counters(sp.delta(before, after)) if after else None
+    if s is None:
+        s = sp.parse_server_log(log_lines) or {"source": "none", "drafted": 0, "accepted": 0,
+                                                "note": "no draft tokens counted (server without --metrics, or "
+                                                        "the drafter did not run)"}
+    s.update(type=v.spec_type, n_max=v.spec_n_max, n_min=v.spec_n_min,
+             draft_model=(m.draft if v.uses_draft_model else None),
+             prompts=job.params.get("prompts") or "prose",
+             sampling={k: m.serve_extra[k] for k in SAMPLING_KEYS if k in m.serve_extra})
+    rates = s.get("accept_rate_per_pos") or []
+    if rates:
+        s["useful_len"] = sp.useful_draft_len(rates)
+    return s
 
 
 # ---------------------------------------------------------------- sweeps
@@ -391,7 +469,8 @@ class Planned:
 
 
 def sweep_jobs(cfg: Config, name: str, *, ctx: int | None = None, include_off: bool = False,
-               force: bool = False, match: list[str] | None = None) -> list[tuple[Job, str, str]]:
+               force: bool = False, match: list[str] | None = None,
+               prompt_sets: list[str] | None = None) -> list[tuple[Job, str, str]]:
     """Jobs of [sweeps.NAME] with the entry's status: (job, action, why). action: run | skip-status | skip-filter."""
     from mse_llm.variants import decode
 
@@ -406,10 +485,14 @@ def sweep_jobs(cfg: Config, name: str, *, ctx: int | None = None, include_off: b
     else:
         params = {"pp": sw.pp, "tg": sw.tg, "depth": sw.depth, "runs": sw.runs, "concurrency": sw.concurrency}
         ctxs = [c]
+    sets: list[str | None] = [None]
+    if sw.tool == "benchy":
+        sets = [None if s == "prose" else s for s in (prompt_sets or sw.prompt_sets)] or [None]
     for e in sw.entries():
         v = decode(e.v)
-        for cc in ctxs:
-            job = Job(sw.tool, sw.model, v, cc, dict(params), sw.engine, name, e.note or None)
+        for cc, ps in ((cc, ps) for cc in ctxs for ps in sets):
+            jp = dict(params) if ps is None else {**params, "prompts": ps}
+            job = Job(sw.tool, sw.model, v, cc, jp, sw.engine, name, e.note or None)
             if match and not any(fnmatch.fnmatchcase(v.name, p) for p in match):
                 out.append((job, "skip-filter", "not matched"))
             elif e.status == "skip" and not force:
@@ -431,6 +514,13 @@ def plan(cfg: Config, jobs: list[tuple[Job, str, str]], *, resume: bool = False,
     for job, action, why in jobs:
         cmd = job.command(cfg, port=port, save_result="<raw>/benchy.json" if job.tool == "benchy" else None)
         key = job.key(cmd)
+        if action == "run" and job.tool == "benchy" and job.params.get("prompts") not in (None, "prose"):
+            try:
+                from mse_llm import quality as qq
+
+                qq.prompt_text(cfg, job.params["prompts"], create=False)
+            except (OSError, ValueError) as e:
+                cmd.errors.append(f"prompts {job.params['prompts']}: {e}")
         if action == "run" and (resume or only_failed):
             bid = env.build_for(cfg, job.engine).get("id")
             idx = last.setdefault(str(bid), rs.latest_by_key(bid))

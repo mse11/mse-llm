@@ -144,7 +144,7 @@ def test_bench_argv_matches_bash(rec, cfg):
 def test_benchy_argv_matches_bash(rec, cfg):
     cmd = benchy_command(cfg, rec["model"], rec["extra"], rec["ctx"])
     assert cmd.argv == rec["argv"]               # one pp/tg/depth value each: same as bash
-    assert cmd.server.argv[1:] == fix_server(rec["server"], "off")
+    assert cmd.server.argv[1:] == fix_server(rec["server"], "off") + ["--metrics"]   # M10: /metrics (spec)
     assert cmd.ok
 
 
@@ -169,7 +169,7 @@ def test_presets_serve_argv_matches_bash(cfg):
     cmd = presets_serve_command(cfg)
     assert tool_name(cmd.argv[0]) == "llama-server"
     norm = [ntpath.normcase(x) for x in cmd.argv[1:]]
-    assert norm == [ntpath.normcase(x) for x in rec["argv"][1:]]
+    assert norm == [ntpath.normcase(x) for x in rec["argv"][1:]] + ["--metrics"]   # M10: /metrics
     assert cmd.errors == []
 
 

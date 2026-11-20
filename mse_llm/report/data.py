@@ -78,7 +78,8 @@ def chart_row(r: rs.RunResult) -> ChartRow:
 # ---------------------------------------------------------------- table / CSV
 
 TABLE_COLS = ("run_id", "tool", "model", "variant", "ctx", "pp_tps", "pp_std", "tg_tps", "tg_std", "ttft_ms",
-              "vram_peak_mib", "server_shared_mib", "spill_mib", "duration_s", "fit", "status", "note", "build")
+              "acceptance", "mean_accept_len", "mean_kld", "same_top_p", "vram_peak_mib", "server_shared_mib",
+              "spill_mib", "duration_s", "fit", "status", "note", "build")
 
 
 def table_row(r: rs.RunResult) -> dict[str, Any]:
@@ -86,7 +87,11 @@ def table_row(r: rs.RunResult) -> dict[str, Any]:
     spill = mon.get("spill_mib") if mon.get("expected_host_mib") is not None else None
     return {"run_id": r.run_id, "tool": r.tool, "model": r.model, "variant": r.variant, "ctx": r.ctx,
             "pp_tps": m.get("pp_tps"), "pp_std": m.get("pp_std"), "tg_tps": m.get("tg_tps"),
-            "tg_std": m.get("tg_std"), "ttft_ms": m.get("ttft_ms"), "vram_peak_mib": _peak(r, "vram_used_mib") or None,
+            "tg_std": m.get("tg_std"), "ttft_ms": m.get("ttft_ms"),
+            "acceptance": (r.spec or {}).get("acceptance_rate"),
+            "mean_accept_len": (r.spec or {}).get("mean_accept_len"),
+            "mean_kld": (r.quality or {}).get("mean_kld"), "same_top_p": (r.quality or {}).get("same_top_p"),
+            "vram_peak_mib": _peak(r, "vram_used_mib") or None,
             "server_shared_mib": _peak(r, "proc_shared_mib") or None, "spill_mib": spill,
             "duration_s": r.duration_s, "fit": (r.fit or {}).get("verdict"), "status": r.status,
             "note": r.reason or r.note, "build": (r.build.get("commit") or "")[:9] or None}

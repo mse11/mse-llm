@@ -63,6 +63,7 @@ These are the only differences. Everything else is identical, in the same order:
 | inspect | port hard-coded 8033 | URL from the engine | §0.1 |
 | first `run_SERVER_gemma_4_26B_A4b_UD_Q4_K_M_*` | served GLM, shadowed | `serve GLM_47_Flash_REAP_23B_A3B_Q4_K_M` (its `default_serve`) | §0.1: names come from config now |
 | `${BENCH_extra}` typo | user bench extra never appended | `[models.*].bench_extra` appended | §0.1 |
+| benchy server, router (`presets serve`) | (none) | `--metrics` at the end | M10: `/metrics` gives speculative-decoding acceptance per draft position |
 
 Every built llama-server / llama-bench argv is also checked against the engine's help snapshot
 (the one for the commit in its `build-manifest.json`): unknown flags, missing values and enum values
@@ -226,7 +227,7 @@ Every built llama-server / llama-bench argv is also checked against the engine's
     `results export --csv` (per run or `--tests`).
   * matplotlib, numpy and jinja2 are normal dependencies, not the optional `[report]` extra the plan named, so
     `uv run mse-llm report chart` works without an extra install step.
-* **M9 (2026-11-19, acceptance runs pending):** `predict.py` (GGUF roofline shape, spec bandwidths from `hw`,
+* **M9 (2026-11-19, acceptance 2026-11-20):** `predict.py` (GGUF roofline shape, spec bandwidths from `hw`,
   `-ncmoe × -ub` memory grid via llama-fit-params, calibration from the results store), `search.py` (staged safe
   search), `cli_predict.py`: `predict`, `results calibrate`, `sweep search`.
   * **Memory grid:** per `-ub` only the highest and lowest `-ncmoe` are measured, the rest follows "one step = one
@@ -248,9 +249,60 @@ Every built llama-server / llama-bench argv is also checked against the engine's
     runs of the current plan (runs before M9 have no plan and are kept). The 7 quiet runs were tagged afterwards.
     `bench`, `benchy`, `sweep run` and `sweep search` now stop before the first job on battery or a quiet plan
     (`--allow-low-power` / `MSE_LLM_ALLOW_LOW_POWER=1` to run anyway; dry runs never stop).
-  * **Open:** acceptance (TG/PP within ~15 % for 2 models; a search without a spill) re-run under a performance plan:
-    `sweep search` for gemma QAT and Qwen3.6-35B MTP, then `results calibrate`. Whether build ffc87c3a7 itself is
-    slower for gemma QAT than ad1b88ca0 (`cuda_flash` vs `cuda_flash-without-zen4-avx512x`) is checked then, since the
-    quiet plan hides it.
+  * **Acceptance (2026-11-20, performance plan, build ffc87c3a7, ctx 65536):**
+    * `sweep search gemma_4_26B_A4b_QAT_UD_Q4_K_XL`: 7 runs, **no spill**. ncmoe stage moe30 → moe10: TG 36.8 / 40.6 /
+      47.3 / 50.8 / **67.9**, PP 901 → 1377; moe9 predicted tight, so the winner stepped back to moe15. ub stage at
+      moe15: ub1024 TG 45.8 / PP 1530, ub2048 52.4 / 1682, ub4096 predicted no-fit, so the winner stepped back to
+      `fa_Kq8_Vq8_b1024_ub1024_moe15`.
+    * `sweep search Qwen36_35B_A3B_UD_Q4_K_M_MTP`: 7 new runs + 1 reused, **no spill**. Order ub then ncmoe (predicted
+      ×1.93 vs ×1.51); ub 512 → 4096 at moe41 (PP 727 → 2424), then moe41 → 33 at ub4096 (PP 2424 → 2684, TG 37.5-42.1),
+      stopped after 2 steps without gain; winner `fa_Kq8_Vq8_b4096_ub4096_moe37` (TG 42.1, PP 2583, VRAM 8750 MiB).
+    * `results calibrate` (22 runs, 44 TG/PP values, 3 models): leave-one-out **median 3.9 %, 41 of 44 within 15 %**.
+      The three outside: the Qwen moe41 TG run from M7 (29.1 vs ~37 now, recorded before runs stored their power
+      plan), the benchy pp 2048 prose run (788 vs 1084 t/s for code at the same settings: the prompt content changes
+      PP, which the roofline doesn't model) and gemma ub1024 TG (45.8 between 50.8 and 52.4: single repetition).
+      Fitted: VRAM 320 GB/s, RAM 35 GB/s, PCIe 30 GB/s.
+    * gemma QAT moe30 on `cuda_flash` vs `cuda_flash-without-zen4-avx512x`: TG 36.8 vs 34.9, PP 901 vs 900. Both beat
+      the bash-era ad1b88ca0 (moe31 TG 27.4, PP 923); **the build is not slower, the M9 slowdown was the quiet plan**.
+    * **Step back only from a real failure (changed 2026-11-20):** gemma moe10 (67.9 TG, 1075 MiB left, fit verdict
+      `fits`) had lost to moe15 (50.8) only because moe9 was *predicted* tight, and ub2048 to ub1024. The winner now
+      steps back one only when the run next to it really failed (spill, guard, error, fit-check skip). Re-run with
+      the stored runs: gemma winner `fa_Kq8_Vq8_default_moe10` (TG 67.9, PP 1377, VRAM peak 11396 MiB; ub1024 at
+      moe10 is predicted no-fit, so the ub stage ran nothing).
   * Not in M9: the K/V and speculative-decoding stages of §9 item 6 (they need KLD and acceptance rate, M10);
     writing into the presets INI (`--apply` writes `default_serve`, which `presets generate` uses).
+* **M10 (2026-11-20):** `quality.py` + `cli_quality.py` (`quality kld-ref / kld / floor / list / clean / corpus`),
+  `parsers/perplexity.py`, `parsers/spec.py`, `report/spec.py` (`report spec [--chart]`), `RunResult.quality` /
+  `.spec`, `sweep run --with-kld`, benchy `--prompts` / sweep `prompt_sets`, draft-side variant tokens (`sdmin<N>`,
+  `dK<t>` / `dV<t>`, `dmoe<N>` / `dcmoe`), `llama-perplexity` in the help snapshots.
+  * **Reference:** the same GGUF with f16 KV at ctx 8192 (8 chunks, corpus `code` = 2 MB of llama.cpp sources,
+    recorded by hash), keyed by model digest, ctx, chunks, corpus and build. Fallbacks when it doesn't fit (from
+    llama-fit-params): more experts on the CPU, `-nkvo`, then q8_0/q8_0 ("vs q8 ref"). The size is printed and
+    confirmed first. Its size is **half the §4.5 estimate**: only the second half of each chunk is stored, and the
+    Qwen3.6 vocab is 248k (15.2 GiB for 8 × 8192, not 20 GB; gemma 4: 16.0, not 34).
+  * **Load mode:** the first Qwen3.6-35B reference was stopped by the guard at 95 % commit: `-lm none` copies the
+    24 GB model into private memory (37 GB with the 8 GB logits buffer), and other apps held ~48 GB. Quality runs now
+    use `-lm mmap` (file-backed, not commit; same logits).
+  * **Acceptance (Qwen3.6-35B-A3B MTP, ctx 8192, code corpus, moe34):** noise floor (moe41 vs moe34) mean KLD
+    < 1e-6, 99 % 2.9e-5. `Kq8_Vq8` 0.00277 ± 0.00013 (same top p 98.97 %), `Kf8_Vf8` 0.00361 (98.87 %), `Kq8_Vq4`
+    0.00460 (98.61 %), `Kq4_Vq4` 0.00639 (98.39 %); PPL ratios 0.999-1.001, so perplexity would have shown no
+    difference at all. Every KV quant is measurable on this hybrid model (only ~10 attention layers, so each one
+    matters), but all are "small"; V q4 costs ~1.7x the KLD of q8/q8 for a few hundred MiB at 64k. OmniCoder 9B
+    (dense, ctx 2048 smoke test): `Kq8_Vq8` 0.00036, `Kq8_Vq4` 0.0036. Each run ~3 min.
+  * **Verdict:** a dense model's floor is below the printed resolution (0.000000), so "2x the floor" alone makes
+    every quant a loss; the verdict uses max(floor, 1e-6) and the ±error, then absolute levels (negligible
+    < 0.001, small < 0.01, noticeable < 0.05).
+  * **Speculative decoding:** every benchmark server and the router get `--metrics`; benchy runs of `sd*` variants
+    store the `/metrics` delta over the run (drafted, accepted, verification steps, accepted per draft position),
+    or the summed `draft acceptance` slot lines when `/metrics` is off, plus the sampling settings. `--prompts code`
+    serves the code corpus to benchy over a local HTTP URL (benchy only fetches its book over HTTP).
+    `report spec` puts acceptance next to TG and the TG of the same variant without spec (flagged when slower).
+  * **Acceptance (sweep `Qwen36_35B_A3B_UD_Q4_K_M_MTP_spec`, ctx 16384, pp 2048 / tg 128, temp 0.3, one run each,
+    performance plan):** no spec TG 39.6 (prose) / 41.6 (code). `sd2mtp` 50.0 / 48.0 (acceptance 76.9 / 68.9 %,
+    per position .86/.67), **`sd3mtp` 51.6 / 51.0 (x1.30 / x1.23, acceptance 76.9 / 72.1 %, .88/.78/.62)**,
+    `sd4mtp` 38.5 / 43.3: **slower than no spec on prose** (flagged) although its mean accepted length is about the
+    same as sd3 (3.24 vs 3.29); position 4 is accepted only 35 % of the time on prose. So on this model sd3mtp is the
+    sweet spot and a 4th draft token costs more than it gains. Code prompts accept less at the first positions but
+    hold up better at position 4 (.46).
+  * Not in M10: the K/V and spec stages of `sweep search`; `--spec-synth-*` ceiling mode; `--base-model` (weight-quant
+    KLD against a bigger quant).

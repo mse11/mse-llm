@@ -39,6 +39,7 @@ class Job:
     engine: str | None = None
     sweep: str | None = None
     note: str | None = None
+    stage: dict[str, Any] | None = None    # staged sweep: {index, pattern}
 
     def command(self, cfg: Config, *, port: int | None = None, save_result: str | None = None,
                 book_url: str | None = None) -> Command:
@@ -52,7 +53,7 @@ class Job:
             return benchy_command(cfg, self.model, self.variant, self.ctx, self.engine, pp=p.get("pp") or None,
                                   tg=p.get("tg") or None, depth=p.get("depth") or None, runs=p.get("runs"),
                                   concurrency=p.get("concurrency") or None, port=port, save_result=save_result,
-                                  prompts=p.get("prompts"), book_url=book_url)
+                                  prompts=p.get("prompts"), book_url=book_url, warmup=p.get("warmup"))
         raise ValueError(f"tool {self.tool!r} runs in a later milestone (eval: M12)")
 
     def key(self, cmd: Command) -> str:
@@ -141,7 +142,7 @@ def _base_result(cfg: Config, job: Job, cmd: Command, env: RunEnv, run_id: str, 
         model_path=m.path, model_identity=env.model_id(m.path), variant=job.variant.name,
         variant_fields=job.variant.as_dict(), ctx=cmd.ctx, params=dict(cmd.params), argv=list(cmd.argv),
         server_argv=list(srv.argv) if srv else None, env=dict(cmd.env), build=env.build_for(cfg, job.engine),
-        hw=env.hw_info(), note=job.note or None)
+        hw=env.hw_info(), note=job.note or None, stage=job.stage)
 
 
 def _tail_reason(lines: list[str], n: int = 3) -> str:
@@ -352,20 +353,30 @@ async def _run_benchy(cfg: Config, job: Job, cmd: Command, res: rs.RunResult, ra
     res.logs.update(server=rs.rel(slog) or str(slog), tool=rs.rel(blog) or str(blog))
     info = sv.StartupInfo()
     assert cmd.server is not None
+    from mse_llm.parsers import moe_cache as mcp
+
+    cache_on = bool(job.variant.moe_cache_mib)
+    # a cache server is stopped with Ctrl+C: the cache prints its hit / miss counters only when it is freed (§4.4);
+    # unloading a pinned 20 GB model can take a while, so it gets a longer grace
     h = ServerHandle(cmd.server.argv, port=port, client_host=eng.client_host,
-                     ready_timeout=cfg.defaults.server_ready_timeout, log_path=slog, memory_cap_mib=opts.mem_cap_mib)
+                     ready_timeout=cfg.defaults.server_ready_timeout, log_path=slog, memory_cap_mib=opts.mem_cap_mib,
+                     ctrl_c=cache_on, grace=CACHE_STOP_GRACE_S if cache_on else 5.0)
     h.proc.watchers.append(info.feed)
     draft_lines: list[str] = []
     h.proc.watchers.append(lambda ln: draft_lines.append(ln) if "draft acceptance" in ln else None)
+    cache_lines: list[str] = []
+    h.proc.watchers.append(lambda ln: cache_lines.append(ln) if mcp.is_cache_line(ln) else None)
     client = pr.Spawned(cmd.argv, log_path=blog, sink=opts.sink)
     scraped: dict[str, dict | None] = {"before": None, "after": None}
     spec_on = bool(job.variant.spec_type)
+    warm = int(cmd.params.get("warmup") or 0)
+    warm_info: dict[str, Any] = {}
 
     async def trip(reason: str) -> None:
         opts.say(f"[red]■ memory guard:[/] {reason} → stopping the server and benchy")
         if client.proc is not None and client.returncode is None:
             await client.stop(grace=2)
-        await h.stop()
+        await h.stop(fast=True)
 
     async def body() -> None:
         try:
@@ -383,6 +394,11 @@ async def _run_benchy(cfg: Config, job: Job, cmd: Command, res: rs.RunResult, ra
             if mon is not None and mon.tripped:
                 return
             opts.say(f"[dim]server ready after {ep.ready_s:.1f} s; running llama-benchy …[/]")
+            if warm:
+                opts.say(f"[dim]warming the MoE cache: {warm} generated tokens …[/]")
+                warm_info.update(await warm_up(ep.root, warm))
+                if mon is not None and mon.tripped:
+                    return
             if spec_on:
                 scraped["before"] = await scrape_metrics(ep.root)
             try:
@@ -403,6 +419,10 @@ async def _run_benchy(cfg: Config, job: Job, cmd: Command, res: rs.RunResult, ra
             await h.stop()
 
     await _with_monitor(mon, lambda: h.proc.proc.pid if h.proc.proc is not None else None, body, trip)
+    if cache_on or cache_lines:
+        res.moe_cache = moe_cache_record(job, cache_lines, warm_info, h.stop_report)
+        if res.moe_cache.get("invalid_config") and not (mon is not None and mon.tripped):
+            res.reason = res.reason or f"invalid config: {res.moe_cache['invalid_config']}"
     if spec_on:
         res.spec = spec_record(cfg, job, scraped["before"], scraped["after"], draft_lines)
     if save is not None and save.is_file():
@@ -413,6 +433,51 @@ async def _run_benchy(cfg: Config, job: Job, cmd: Command, res: rs.RunResult, ra
             res.logs["result"] = rs.rel(save) or str(save)
         except ValueError as e:
             res.reason = res.reason or f"benchy JSON unreadable: {e}"
+
+
+CACHE_STOP_GRACE_S = 60.0
+WARMUP_PROMPT = ("Write a long, detailed technical design document for a distributed key-value store: the data model, "
+                 "replication, consistency, failure handling, compaction, monitoring and the client API.")
+
+
+async def warm_up(root: str, n_predict: int) -> dict[str, Any]:
+    """One generation before benchy, so the MoE cache is full and the CPU share applies during the measured runs
+    (until the cache is full every miss is uploaded; the tuner generates 2048 tokens on its first run)."""
+    import httpx
+
+    body = {"prompt": WARMUP_PROMPT, "n_predict": n_predict, "ignore_eos": True, "cache_prompt": False,
+            "temperature": 0.8, "seed": 1}
+    try:
+        async with httpx.AsyncClient(timeout=1800.0) as c:
+            r = await c.post(root + "/completion", json=body)
+        t = (r.json() or {}).get("timings") or {}
+        return {"tokens": t.get("predicted_n", n_predict), "tg_tps": _round(t.get("predicted_per_second"))}
+    except (httpx.HTTPError, ValueError) as e:
+        return {"tokens": n_predict, "error": str(e)[:200]}
+
+
+def _round(x: Any, nd: int = 2) -> Any:
+    return round(x, nd) if isinstance(x, (int, float)) else x
+
+
+def moe_cache_record(job: Job, lines: list[str], warm: dict[str, Any], stop_report=None) -> dict[str, Any]:
+    """RunResult.moe_cache (§4.4): the cache lines of the server log (size, slots, hit rate, uploaded MiB),
+    what was asked for (mc / cs / load mode) and whether the counters could be read (a clean Ctrl+C exit)."""
+    from mse_llm.parsers import moe_cache as mcp
+
+    v = job.variant
+    out: dict[str, Any] = mcp.parse_log(lines) or {"note": "no MoE cache line in the server log"}
+    out.update(requested_mib=v.moe_cache_mib, requested_cpu_share=(None if v.moe_cache_cpu_share is None
+                                                                   else v.moe_cache_cpu_share / 100),
+               load_mode=v.load_mode, cpu_moe=v.cpu_moe or None, n_cpu_moe=v.n_cpu_moe)
+    if warm:
+        out["warmup"] = warm
+    if stop_report is not None:
+        out["clean_exit"] = bool(stop_report.graceful) and not stop_report.killed
+    if (v.moe_cache_mib and not v.cpu_moe and v.n_cpu_moe is None and not out.get("invalid_config")
+            and not out.get("devices")):
+        out["invalid_config"] = "MoE cache without host experts (add cmoe or moe<N>)"
+    return {k: x for k, x in out.items() if x is not None}
 
 
 async def scrape_metrics(root: str) -> dict | None:
@@ -459,6 +524,12 @@ def spec_record(cfg: Config, job: Job, before: dict | None, after: dict | None,
 
 # ---------------------------------------------------------------- sweeps
 
+def decode_variant(name: str) -> Variant:
+    from mse_llm.variants import decode
+
+    return decode(name)
+
+
 @dataclass
 class Planned:
     job: Job
@@ -470,8 +541,10 @@ class Planned:
 
 def sweep_jobs(cfg: Config, name: str, *, ctx: int | None = None, include_off: bool = False,
                force: bool = False, match: list[str] | None = None,
-               prompt_sets: list[str] | None = None) -> list[tuple[Job, str, str]]:
-    """Jobs of [sweeps.NAME] with the entry's status: (job, action, why). action: run | skip-status | skip-filter."""
+               prompt_sets: list[str] | None = None, entries: list[Any] | None = None,
+               stage: dict[str, Any] | None = None) -> list[tuple[Job, str, str]]:
+    """Jobs of [sweeps.NAME] with the entry's status: (job, action, why). action: run | skip-status | skip-filter.
+    entries: these SweepEntry items instead of the sweep's own (one stage of a staged sweep, tagged with `stage`)."""
     from mse_llm.variants import decode
 
     sw = cfg.sweeps[name]
@@ -483,16 +556,17 @@ def sweep_jobs(cfg: Config, name: str, *, ctx: int | None = None, include_off: b
         params = {"tg": sw.tg, "repetitions": sw.repetitions}
         ctxs = sw.prompts or [c]
     else:
-        params = {"pp": sw.pp, "tg": sw.tg, "depth": sw.depth, "runs": sw.runs, "concurrency": sw.concurrency}
+        params = {"pp": sw.pp, "tg": sw.tg, "depth": sw.depth, "runs": sw.runs, "concurrency": sw.concurrency,
+                  "warmup": sw.warmup}
         ctxs = [c]
     sets: list[str | None] = [None]
     if sw.tool == "benchy":
         sets = [None if s == "prose" else s for s in (prompt_sets or sw.prompt_sets)] or [None]
-    for e in sw.entries():
+    for e in (sw.entries() if entries is None else entries):
         v = decode(e.v)
         for cc, ps in ((cc, ps) for cc in ctxs for ps in sets):
             jp = dict(params) if ps is None else {**params, "prompts": ps}
-            job = Job(sw.tool, sw.model, v, cc, jp, sw.engine, name, e.note or None)
+            job = Job(sw.tool, sw.model, v, cc, jp, sw.engine, name, e.note or None, stage)
             if match and not any(fnmatch.fnmatchcase(v.name, p) for p in match):
                 out.append((job, "skip-filter", "not matched"))
             elif e.status == "skip" and not force:

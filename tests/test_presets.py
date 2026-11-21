@@ -11,6 +11,7 @@ from click.testing import CliRunner
 from mse_llm import flagcheck
 from mse_llm import presets as ps
 from mse_llm import serve as sv
+from mse_llm import variants as vv
 from mse_llm.cli import main
 from mse_llm.config import load_config
 from mse_llm.util import project_root
@@ -88,7 +89,8 @@ def test_dump_maps_every_preset_back_to_default_serve(server_help, cfg):
     for s in pf.models:
         d = ps.dump(pf, s.name, server_help, cfg)
         assert d.model_key, s.name
-        assert d.matches_default, (s.name, d.variant, d.default_serve)
+        bash = cfg.models[d.model_key].bash_serve      # the INI is the bash baseline: it serves the old default
+        assert d.matches_default or (bash and vv.canonical(bash) == d.variant), (s.name, d.variant, d.default_serve)
     d = ps.dump(pf, "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL", server_help, cfg)
     f = d.flags
     assert f[:2] == ["-m", pf.find(d.name).model]

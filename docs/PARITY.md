@@ -306,3 +306,78 @@ Every built llama-server / llama-bench argv is also checked against the engine's
     hold up better at position 4 (.46).
   * Not in M10: the K/V and spec stages of `sweep search`; `--spec-synth-*` ceiling mode; `--base-model` (weight-quant
     KLD against a bigger quant).
+* **M11 (2026-11-21):** `parsers/moe_cache.py`, `staged.py`, `tune.py` + `tune_shim.py` + `cli_tune.py`
+  (`tune moe-cache`), `report/moe_cache.py` (`report moe-cache [--chart]`), `RunResult.moe_cache` / `.stage` /
+  `.tune`, `[sweeps.*].stages` / `goal` / `warmup`, `benchy --warmup`, `sweep run --until-stage`, sweep
+  `Qwen36_35B_A3B_UD_Q4_K_M_MTP_moecache` (stages 0-4 of §4.4). The tokens (`cmoe mc cs lm* nohost Kf8`) date from M3.
+  * **The cache's hit / miss counters are printed only when it is freed**, i.e. at a clean exit
+    (`~llama_moe_cache::impl` -> `log_stats`), and only at `-lv 4`, like its load lines (llama's info lines are
+    hidden at the default verbosity 3). llama-server handles only Ctrl+C itself, and CTRL_BREAK (the M5 stop) ends it
+    without cleanup. So a cache server now gets its own hidden console instead of a process group. It is stopped with
+    a real Ctrl+C: a short helper process attaches to that console and sends it (`proc.send_ctrl_c`). Checked with
+    the real server (Qwen3.6-35B `cmoe_mc4096_cs95_lmA`): "cleaning up before exit", then the counters (small batches
+    62.2 % hit rate, 7869 MiB uploaded). The memory guard still kills at once (`stop(fast=True)`).
+  * **Children inherit "ignore Ctrl+C"** from a parent started in a new process group (an IDE, a CI runner, this
+    session's shell). A child that inherits it never sees the Ctrl+C. mse-llm clears the flag for itself before it
+    starts such a server; that is the normal console state.
+  * **Upstream `moe-cache-tune.py` doesn't run on Windows as is.** It stops each server with
+    `proc.send_signal(signal.SIGINT)`, which raises ValueError on Windows (and a kill would lose the counters it
+    reads). `mse_llm.tune_shim` runs it unchanged, with `Popen` patched for llama-server only: own hidden console,
+    SIGINT -> `send_ctrl_c`.
+  * The load lines carry the function name `impl:` (`impl:      CUDA0 MoE cache size = …`,
+    `impl: 37 layers, q5_K:  2069 slots (21.8%, 7.0 tokens worth)`), not `llama_moe_cache:` as §4.4 wrote. Only the
+    exit counters have the `llama_moe_cache:` prefix.
+  * **llama-fit-params counts the cache** (`--moe-cache-mib` is in its help; the size goes into the KV column), so
+    the fit check skips a too-large cache before it starts: Qwen3.6-35B ctx 65536 `b4096_ub4096_cmoe_mc6144` is
+    NO-FIT (-2037 MiB left), `default_cmoe_mc6144` fits (1996 left). That's why the stages use the default batch.
+  * **Pinned load modes and the commit limit:** after 8 days of uptime ~54-58 GiB was committed (86 GiB limit), but
+    processes held only 11.6 GiB private and the kernel pools 7 GiB: ~35 GiB belonged to no process (GPU shared
+    memory 0.4 GiB, so not leftover CUDA buffers). Pinned runs (`lmN` / `lmD`, ~19 GB of host experts in private
+    memory) were stopped by the guard at 95 % commit within 30 s; `lmA` (mmap) isn't commit and ran. A restart
+    (not a Fast Startup shutdown, which restores the kernel session) brought commit to 15 GiB, and every pinned run
+    fitted.
+  * Staged sweeps: a variant that an earlier stage of the same invocation already ran (e.g. a stage winner that
+    reappears in the next stage) is reused, not run again. `--resume` skips stored `ok` runs as in any sweep.
+  * `-lv 4` adds only load-time lines (563 instead of 44 lines for a whole benchy run), so it doesn't slow TG. Runs
+    without a cache keep the default verbosity.
+  * **Acceptance (2026-11-21, Performance Mode, build ffc87c3a7, ctx 65536, pp 512 / 8192, tg 512, 2 runs, 512-token
+    warm-up):** `sweep run Qwen36_35B_A3B_UD_Q4_K_M_MTP_moecache --until-stage 2`: 18 runs, all ok, no spill, no
+    fit skip; `report moe-cache --chart` draws TG / PP / duration / VRAM / hit rate / uploaded MiB per variant.
+    * Stage 0 (no cache, `moe34`): `lmN` TG 36.5 / PP 909, `lmD` 35.9 / 893, `lmA` (mmap) 35.6 / **501**. Load mode
+      hardly changes TG but pinned PP is 1.8x mmap's (your bash-era `--mmap 0` choice holds).
+    * Stage 1 (`cmoe`, all experts in RAM): **the cache size decides TG**: 2 / 4 / 6 GiB at share 0 = 48-49 /
+      61 / **71.7 t/s** (hit rate 64 / 80 / 88 %), x1.96 the best run without a cache. `lmN` vs `lmD` within 1 t/s.
+      Share 0.95 is slower at every size (47.8 / 57.5 / 66.3): it cuts the PCIe uploads 11-15x but the CPU side is
+      slower than the link here (4 threads, `[defaults].threads`).
+    * Stage 2 (share at 6 GiB, `lmD`): 0 = 71.7, 0.5 = 65.6, 0.8 = 68.3, 0.9 = 66.3, 0.95 = 66.9: share 0 wins.
+    * PP with the cache: 662-710 t/s at 8192 (vs 909 for `moe34` without it): `cmoe` puts all experts in RAM, and the
+      cache only serves small batches. So `cmoe_mc6144_cs0_lmD` trades -24 % PP for +96 % TG; VRAM 9.8 GiB peak.
+    * Winner `fa_Kq8_Vq8_default_cmoe_mc6144_cs0_lmD` (results/staged/…_moecache/). Stage 3 (cache on top of
+      `moe34` / `moe37`, + `sd3mtp`) and stage 4 (K/V types) are configured but not part of the M11 check.
+    * `tune moe-cache … -v fa_Kq8_Vq8_default_cmoe_lmD --ctx 65536` (Performance Mode): model fit within 0.7 %, uploads
+      20.6 GiB/s, CPU 35.5 GiB/s; recommends `--moe-cache-mib 7360 --moe-cache-cpu-share 0` (predicted 83.3 t/s), i.e.
+      the same answer as the sweep (share 0, the largest cache that fits). Measured with the sweep's benchy settings:
+      `cmoe_mc7360_cs0_lmD` **TG 75.5, PP 726**, VRAM peak 11042 MiB, no spill: the best config so far (the tuner
+      times plain /completion generations, which run faster than benchy's). The Quiet Mode tuner run earlier was
+      refused by the tuner itself (model 31.8 % off).
+  * **`default_serve` of `Qwen36_35B_A3B_UD_Q4_K_M_MTP` is now `fa_Kq8_Vq8_default_cmoe_mc7360_cs0_lmD`** (your decision,
+    2026-11-21). The old value is kept as `bash_serve`, which the two parity tests (`run_SERVER_*`, the INI) compare
+    against; the field goes away with the script in M13. The bash INI still serves `moe34`; `presets generate` writes
+    the new one. Found doing it: `presets generate` dropped a variant's own load mode (`lmD`), so the router would
+    have loaded it with the global `load-mode = none`; it now writes `load-mode = dio` in that section.
+  * **Stages 3-4 (2026-11-21, same settings, `sweep run … --resume`, 8 new runs, all ok):** stage 3 was changed before the
+    run: `moe34` + a 6 GiB cache is NO-FIT at ctx 65536 (-205 MiB, with `sd3mtp` -818), so the fit check would have
+    skipped 2 of its 3 variants. It now runs `moe{37,38}` + the cache, `{winner}_sd3mtp`, and `{winner}` itself
+    (the stored stage-2 run, so stage 4 starts from the best config so far).
+    * Stage 3: `moe37_mc6144_cs0_lmD` TG 76.7 / PP 738, `moe38` 75.0 / 702 (some experts back on the GPU help a
+      little), **`cmoe_mc6144_cs0_lmD_sd3mtp` 81.5** / 643 (MTP acceptance 68.6 %, per position .85/.67/.53, cache hit
+      rate 84.8 %). The cache and MTP add up: 2.2x the 36.5 t/s of `moe34` without either.
+    * Stage 4 (K/V on that winner): `Kq8_Vq8` 81.5, `Kq8_Vf8` 84.7, `Kq8_Vq4` 85.9, **`Kf8_Vq8` 86.5** / PP 667,
+      `Kf8_Vf8` 82.4, `Kf8_Vq4` 79.2. The spread follows the MTP acceptance (61-68 %, one sampled benchy run each at
+      temp 0.3) more than the K/V types, so differences under ~5 % are within run-to-run noise.
+    * KLD of the winner's K/V (`quality kld … -v fa_Kf8_Vq8_default_moe34`, the M10 reference): mean 0.00329, same top
+      p 98.84 %: "small", between `Kq8_Vq8` (0.00277) and `Kf8_Vf8` (0.00361).
+    * Sweep winner: `fa_Kf8_Vq8_default_cmoe_mc6144_cs0_lmD_sd3mtp` (TG 86.5, PP 667, VRAM peak ~10.4 GiB).
+      Set as **`default_serve_spec`** (your decision, 2026-11-21; `serve MODEL --spec`); the bash alternative
+      `fa_Kq8_Vq4_default_moe34_sd2mtp` is kept as `bash_serve_spec` for the parity test. `default_serve` stays
+      `cmoe_mc7360_cs0_lmD` (no spec).

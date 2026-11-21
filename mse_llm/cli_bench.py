@@ -149,7 +149,7 @@ def _summary_table(results) -> Table:
     return t
 
 
-async def _run_planned(ctx: Ctx, planned, opts, title: str) -> list:
+async def _run_planned(ctx: Ctx, planned, opts, title: str, notify_end: bool = True) -> list:
     from mse_llm import bench as bb
     from mse_llm import notify
     from mse_llm import results as rs
@@ -167,7 +167,7 @@ async def _run_planned(ctx: Ctx, planned, opts, title: str) -> list:
             console.print(f"  [dim]→ {escape(rs.rel(r.path()) or '')}[/]")
     if len(out) > 1:
         console.print(_summary_table(out))
-    if out:
+    if out and notify_end:
         ok = sum(r.status == "ok" for r in out)
         notify.notify(f"{title}: {ok} of {len(out)} runs ok", ctx.cfg.defaults.notify)
     return out
@@ -261,16 +261,19 @@ def bench_cmd(ctx: Ctx, model, patterns, from_file, engine, dry_run, ctxs, tg, r
 @click.option("--prompts", "prompt_sets", multiple=True,
               help="Prompt set: prose (benchy's book, default) | code (llama.cpp sources) | wikitext2 | FILE. "
                    "Repeatable: one run per set (speculative-decoding acceptance depends on the content).")
+@click.option("--warmup", type=int, default=None, metavar="TOKENS",
+              help="MoE cache variants (mc*): generate this many tokens before benchy, so the cache is full.")
 @_run_options
 @pass_ctx
 def benchy_cmd(ctx: Ctx, model, patterns, from_file, engine, dry_run, ctx_, pp, tg, depth, runs, concurrency, port,
-               prompt_sets, **run) -> None:
+               prompt_sets, warmup, **run) -> None:
     """llama-benchy against a background llama-server per variant, monitored, results into results/
     (bash run_benchy_params_with_server / run_BENCHY_WITH_SERVER_*)."""
     from mse_llm import bench as bb
 
     vs = _variants_for(ctx, model, patterns, from_file)
-    params = {"pp": list(pp), "tg": list(tg), "depth": list(depth), "runs": runs, "concurrency": list(concurrency)}
+    params = {"pp": list(pp), "tg": list(tg), "depth": list(depth), "runs": runs, "concurrency": list(concurrency),
+              "warmup": warmup}
     sets = [None if s == "prose" else s for s in prompt_sets] or [None]
     jobs = [(bb.Job("benchy", model, v, ctx_, dict(params) if s is None else {**params, "prompts": s}, engine),
              "run", "") for v in vs for s in sets]
@@ -302,13 +305,14 @@ def sweep_list(ctx: Ctx) -> None:
         es = sw.entries()
         rows.append({"name": name, "tool": sw.tool, "model": sw.model, "ctx": sw.ctx,
                      "on": sum(e.status == "on" for e in es), "off": sum(e.status == "off" for e in es),
-                     "skip": sum(e.status == "skip" for e in es), "bash": sw.bash})
+                     "skip": sum(e.status == "skip" for e in es), "bash": sw.bash, "stages": len(sw.stages)})
     if ctx.json:
         click.echo(json.dumps(rows, indent=2))
         return
     t = Table("sweep", "tool", "model", "ctx", "on", "off", "skip", "replaces")
     for r in rows:
-        t.add_row(r["name"], r["tool"], r["model"], str(r["ctx"] or "-"), str(r["on"]), str(r["off"]),
+        on = f"{r['stages']} stages" if r["stages"] else str(r["on"])
+        t.add_row(r["name"], r["tool"], r["model"], str(r["ctx"] or "-"), on, str(r["off"]),
                   str(r["skip"]), r["bash"] or "")
     console.print(t)
     console.print("[dim]on = runs; off = commented out in bash (--include-off); skip = freeze/skipped notes "
@@ -324,6 +328,9 @@ def sweep_show(ctx: Ctx, name) -> None:
     from mse_llm import bench as bb
 
     sw = _sweep(ctx, name)
+    if sw.stages:
+        _show_staged(ctx, name, sw)
+        return
     jobs = bb.sweep_jobs(ctx.cfg, name, include_off=True, force=True)
     env = bb.RunEnv()
     from mse_llm import results as rs
@@ -356,6 +363,33 @@ def sweep_show(ctx: Ctx, name) -> None:
     console.print(f"[dim]build {bid}[/]")
 
 
+def _show_staged(ctx: Ctx, name: str, sw) -> None:
+    """Stages with their patterns, and the winners of the last staged run on this build (if any)."""
+    from mse_llm import bench as bb
+    from mse_llm import staged as st
+
+    env = bb.RunEnv()
+    bid = env.build_for(ctx.cfg, sw.engine).get("id")
+    p = st.summary_path(name, bid, env.hw_info().get("hash"))
+    summ = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
+    winners = {s["index"]: s for s in (summ or {}).get("stages", [])}
+    if ctx.json:
+        click.echo(json.dumps({"name": name, **sw.model_dump(exclude={"variants", "annotations"}), "build": bid,
+                               "last": summ}, indent=2))
+        return
+    console.print(f"[bold]{name}[/]: staged {sw.tool} {sw.model}, ctx {sw.ctx}, goal {sw.goal}"
+                  + (f", warm-up {sw.warmup} tokens" if sw.warmup else ""))
+    t = Table("stage", "patterns", "variants", "winner (this build)")
+    for i, pats in enumerate(sw.stages):
+        w = winners.get(i) or {}
+        t.add_row(str(i), escape("\n".join(pats)), str(len(w.get("variants") or [])) if w else "-",
+                  escape(w.get("winner") or w.get("unresolved") or "-"))
+    console.print(t)
+    if summ and summ.get("winner"):
+        console.print(f"sweep winner: [bold]{escape(summ['winner'])}[/]  [dim]({escape(str(p))})[/]")
+    console.print(f"[dim]build {bid}; `mse-llm sweep run {name} --dry-run` resolves the stages[/]")
+
+
 @sweep.command("run")
 @click.argument("name")
 @click.option("--ctx", "ctx_", type=int, default=None, help="Override the sweep's ctx (bench: -p, benchy: -c).")
@@ -372,15 +406,25 @@ def sweep_show(ctx: Ctx, name) -> None:
                    "missing).")
 @click.option("--kld-ctx", type=int, default=None, help="--with-kld: KLD context (default 8192).")
 @click.option("--yes", "-y", is_flag=True, help="--with-kld: don't ask before creating a reference.")
+@click.option("--until-stage", type=int, default=None, metavar="N",
+              help="Staged sweep: stop after stage N (0-based).")
 @json_option
 @_run_options
 @pass_ctx
 def sweep_run(ctx: Ctx, name, ctx_, include_off, match, resume, only_failed, port, dry_run, prompt_sets, with_kld,
-              kld_ctx, yes, force, **run) -> None:
-    """Run a sweep: every variant with status on, one result per variant (bash run_BENCH_* / run_BENCHY_*)."""
+              kld_ctx, yes, until_stage, force, **run) -> None:
+    """Run a sweep: every variant with status on, one result per variant (bash run_BENCH_* / run_BENCHY_*).
+    A sweep with `stages` runs stage by stage; each stage's winner fills the `{best}` / `{winner}` of the next."""
     from mse_llm import bench as bb
 
     sw = _sweep(ctx, name)
+    if sw.stages:
+        if with_kld or only_failed or include_off:
+            raise click.ClickException("staged sweeps take --resume, --match, --until-stage, --ctx, --prompts, "
+                                       "--dry-run (not --with-kld / --only-failed / --include-off)")
+        _run_staged(ctx, name, sw, ctx_=ctx_, match=list(match), resume=resume, port=port, dry_run=dry_run,
+                    prompt_sets=list(prompt_sets) or None, until=until_stage, force=force, run=run)
+        return
     try:
         jobs = bb.sweep_jobs(ctx.cfg, name, ctx=ctx_, include_off=include_off, force=force, match=list(match),
                              prompt_sets=list(prompt_sets) or None)
@@ -401,6 +445,121 @@ def sweep_run(ctx: Ctx, name, ctx_, include_off, match, resume, only_failed, por
         return
     console.print(f"[bold]sweep {name}[/]: {sw.tool} {sw.model}, ctx {ctx_ or sw.ctx}")
     _execute(ctx, planned, _opts(ctx, port=port, force=force, **run), f"sweep {name}", dry_run)
+
+
+def _staged_runs(planned, results_by_key, last) -> list:
+    """StageRun per planned job: a result of this invocation, else the stored one (--resume / dry run)."""
+    from mse_llm import staged as st
+
+    out = []
+    for p in planned:
+        if p.action == "skip-filter":
+            continue
+        r = results_by_key.get(p.key)
+        if r is not None:
+            out.append(st.run_of(r))
+        elif p.key in last and p.action != "run":
+            out.append(st.run_of(last[p.key], reused=True))
+        elif p.action == "skip-status":
+            out.append(st.StageRun(p.job.variant.name, "skipped", reason=p.why))
+    return out
+
+
+def _run_staged(ctx: Ctx, name: str, sw, *, ctx_, match, resume, port, dry_run, prompt_sets, until, force,
+                run) -> None:
+    """Staged sweep (§4.4): stage N's patterns are resolved with the winners of stages 0..N-1, then run."""
+    from mse_llm import bench as bb
+    from mse_llm import notify
+    from mse_llm import results as rs
+    from mse_llm import staged as st
+    from mse_llm.config import SweepEntry
+
+    opts = _opts(ctx, port=port, force=force, **run)
+    env = bb.RunEnv()
+    build = env.build_for(ctx.cfg, sw.engine).get("id")
+    tuned = st.load_tuned(sw.model)
+    winners: list = []
+    states: list = []
+    ran: dict = {}                 # run key -> RunResult of this invocation
+    last_stage = len(sw.stages) - 1 if until is None else min(until, len(sw.stages) - 1)
+    say = (lambda *a, **k: None) if ctx.json else console.print
+    say(f"[bold]staged sweep {name}[/]: {sw.tool} {sw.model}, ctx {ctx_ or sw.ctx}, "
+        f"{len(sw.stages)} stages (running 0..{last_stage}), goal {sw.goal}"
+        + ("  [dim](dry run: later stages resolve from stored results)[/]" if dry_run else ""))
+    gated = False
+    for i, patterns in enumerate(sw.stages[: last_stage + 1]):
+        state = st.StageState(i, list(patterns))
+        states.append(state)
+        try:
+            names = [n for pat in patterns for n in st.resolve(pat, winners, tuned)]
+        except st.Unresolved as e:
+            state.unresolved = str(e)
+            say(f"[bold]stage {i}[/]: [yellow]{escape(str(e))}[/]")
+            break
+        except st.StageError as e:
+            raise click.ClickException(f"stage {i}: {e}") from e
+        state.variants = list(dict.fromkeys(names))
+        say(f"[bold]stage {i}[/]: {len(state.variants)} variant(s) from "
+            + ", ".join(f"[cyan]{escape(p)}[/]" for p in patterns))
+        entries = [SweepEntry(v=n) for n in state.variants]
+        jobs = bb.sweep_jobs(ctx.cfg, name, ctx=ctx_, force=force, match=match, prompt_sets=prompt_sets,
+                             entries=entries, stage={"index": i, "patterns": list(patterns)})
+        # a stage's winner needs its runs: a stored ok run of this build counts (always in a dry run)
+        planned = bb.plan(ctx.cfg, jobs, resume=resume or dry_run, port=port, env=env)
+        for p in planned:          # a variant an earlier stage of this invocation already ran (e.g. its winner)
+            if p.action == "run" and p.key in ran:
+                p.action, p.why = "skip-resume", f"ran in this sweep ({ran[p.key].run_id})"
+        last = rs.latest_by_key(build)
+        done: dict = {k: r for k, r in ran.items() if any(p.key == k for p in planned)}
+        if dry_run:
+            if not ctx.json:
+                _print_commands(ctx, [p.cmd for p in planned if p.action == "run"])
+                _print_plan(planned)
+        else:
+            _print_plan(planned)
+            todo = [p for p in planned if p.action == "run"]
+            bad = [p for p in todo if not p.cmd.ok]
+            if bad:
+                raise click.ClickException(f"stage {i}: {bad[0].job.variant.name}: "
+                                           + "; ".join(bad[0].cmd.errors + (bad[0].cmd.server.errors
+                                                                            if bad[0].cmd.server else [])))
+            if todo:
+                if not gated:
+                    power_gate(opts.allow_low_power)
+                    gated = True
+                try:
+                    out = asyncio.run(_run_planned(ctx, todo, opts, f"sweep {name} stage {i}", notify_end=False))
+                except KeyboardInterrupt:
+                    console.print("[yellow]interrupted: the running job was stopped and recorded as aborted[/]")
+                    sys.exit(130)
+                done.update({p.key: r for p, r in zip(todo, out, strict=True)})
+                ran.update(done)
+        state.runs = _staged_runs(planned, done, last)
+        w = st.pick_winner(state.runs, sw.goal)
+        if w is None:
+            msg = "no ok run" + (" stored yet" if dry_run else "") + f" in stage {i}: later stages can't resolve"
+            say(f"[yellow]{msg}[/]")
+            state.unresolved = msg
+            break
+        state.winner = w.variant
+        winners.append(bb.decode_variant(w.variant))
+        say(f"  [green]stage {i} winner[/]: [bold]{escape(w.variant)}[/]  TG {_fmt(w.tg, 2)}, PP {_fmt(w.pp)}"
+            + (f", hit rate {w.hit_rate * 100:.1f} %" if w.hit_rate is not None else "")
+            + ("  [dim](stored run)[/]" if w.reused else ""))
+    if ctx.json:
+        click.echo(json.dumps([s.as_dict() for s in states], indent=2))
+    allruns = [r for s in states for r in s.runs]
+    best = st.pick_winner(allruns, sw.goal)
+    if not dry_run and allruns and opts.write:
+        path = st.write_summary(name, sw.model, sw.goal, states, build, env.hw_info().get("hash"))
+        say(f"[dim]→ {escape(rs.rel(path) or str(path))}[/]")
+    if best is not None:
+        say(f"[bold green]sweep winner[/] ({sw.goal}): [bold]{escape(best.variant)}[/]  TG {_fmt(best.tg, 2)}, "
+            f"PP {_fmt(best.pp)}")
+        say(f"[dim]report: mse-llm report moe-cache --sweep {name} --chart[/]")
+    if not dry_run and any(not r.reused for r in allruns):
+        notify.notify(f"sweep {name}: {sum(r.status == 'ok' for r in allruns)} of {len(allruns)} runs ok",
+                      ctx.cfg.defaults.notify)
 
 
 # ---------------------------------------------------------------- results

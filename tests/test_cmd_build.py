@@ -186,5 +186,7 @@ def test_every_bash_server_function_has_a_default_serve(cfg):
         if rec["fn"].startswith("synthetic"):
             continue
         m = cfg.models[rec["model"]]
-        assert vv.canonical(rec["extra"]) in {vv.canonical(x) for x in (m.default_serve, m.default_serve_spec) if x}
+        bash = m.bash_serve or m.default_serve           # default_serve may have moved on since the bash script
+        spec = m.bash_serve_spec or m.default_serve_spec
+        assert vv.canonical(rec["extra"]) in {vv.canonical(x) for x in (bash, spec) if x}
         assert m.ctx == rec["ctx"]

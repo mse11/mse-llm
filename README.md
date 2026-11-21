@@ -177,6 +177,32 @@ uv run mse-llm benchy Qwen36_35B_A3B_UD_Q4_K_M_MTP -v "fa_Kq8_Vq8_default_moe34_
 uv run mse-llm report spec --model Qwen36_35B_A3B_UD_Q4_K_M_MTP --chart   # vs the no-spec run; slower = flagged
 ```
 
+MoE expert cache (M11, §4.4). Tokens `cmoe`, `mc<MiB>` (`--moe-cache-mib`), `cs<pct>` (`--moe-cache-cpu-share`),
+`lmN/lmA/lmD/lmL` (load mode), `nohost`, `Kf8`/`Vf8`. The cache works for small batches only and llama-bench has no
+`--moe-cache-*`, so cache variants run as benchy. Their server gets `-lv 4` (the cache logs at info level) and is
+stopped with a real Ctrl+C, because the cache prints its hit / miss counters only when it is freed. The run stores
+`moe_cache`: size, slots, hit rate and uploaded MiB of the small batches, and the same for large batches. A
+`warmup = N` in the sweep (or `benchy --warmup N`) generates N tokens first, so the cache is full when benchy
+measures. A config the cache can't run ("MoE cache is disabled", "budget is too small") fails as `invalid config`.
+The fit check counts the cache (llama-fit-params adds it to the GPU part).
+
+Staged sweeps: `stages = [[...], [...]]` in a sweep. Each stage starts from the winners of the stages before:
+`mc{best}` / `cs{best}` / `lm{best}` / `moe{best}` / `K{best}` ... take that setting from the newest winner,
+`{winner}_Kf8_Vf8` is the previous winner with other tokens, and `mc{tuned}` / `cs{tuned}` come from `tune
+moe-cache`. The goal (`goal = "tg"`) picks each winner. `sweep run NAME --until-stage 2` stops after stage 2.
+`--dry-run` resolves later stages from stored runs. Winners go to `results/staged/<sweep>/`.
+
+```
+uv run mse-llm sweep run Qwen36_35B_A3B_UD_Q4_K_M_MTP_moecache --until-stage 2 [--resume] [--dry-run]
+uv run mse-llm report moe-cache --sweep Qwen36_35B_A3B_UD_Q4_K_M_MTP_moecache --chart   # TG/PP/VRAM/hit rate
+uv run mse-llm tune moe-cache Qwen36_35B_A3B_UD_Q4_K_M_MTP -v fa_Kq8_Vq8_default_cmoe_lmD [--max-mib N] [--dry-run]
+```
+
+`tune moe-cache` runs llama.cpp's `scripts/moe-cache-tune.py` on the variant's server argv. It does 6 server runs,
+which are reused while the command stays the same. On Windows it runs through `mse_llm.tune_shim`: the script stops
+its servers with SIGINT, which Windows can't send, so the shim turns that into a Ctrl+C. The recommendation is
+stored as a variant (`results/tune/<model>.json`).
+
 Sweep entries keep the bash comments as data: `status = "off"` (commented out: `--include-off`),
 `status = "skip"` ("PC freeze": only with `--force`), `note` and `tag` (sweetspot, sporadic-freeze, ...).
 `bench`, `benchy`, `sweep run` and `sweep search` stop before the first job on battery or under a quiet /

@@ -71,7 +71,7 @@ class RunResult(_M):
     key: str                               # same key + same build = same measurement (sweep --resume)
     timestamp: str
     sweep: str | None = None
-    tool: Literal["bench", "benchy", "eval", "quality"]
+    tool: Literal["bench", "benchy", "eval", "quality", "tune"]
     engine: str
     model: str
     model_path: str | None = None
@@ -98,6 +98,11 @@ class RunResult(_M):
     # M10: KLD / PPL vs a reference (tool quality: mode ref | kld | floor), speculative-decoding acceptance (benchy)
     quality: dict[str, Any] | None = None
     spec: dict[str, Any] | None = None
+    # M11: MoE expert cache (server log: size, slots, hit rate, uploaded MiB), §4.4
+    moe_cache: dict[str, Any] | None = None
+    # M11: one step of a staged sweep (stage index, winner), `tune moe-cache` recommendation
+    stage: dict[str, Any] | None = None
+    tune: dict[str, Any] | None = None
     logs: dict[str, str] = Field(default_factory=dict)
 
     def index_line(self) -> dict[str, Any]:
@@ -110,7 +115,8 @@ class RunResult(_M):
                 "n_prompt": m.get("n_prompt"), "vram_peak_mib": _peak(mon, "vram_used_mib"),
                 "spill_mib": mon.get("spill_mib"), "status": self.status, "reason": self.reason,
                 **({"prompts": self.params["prompts"]} if self.params.get("prompts") else {}),
-                **_quality_index(self.quality), **_spec_index(self.spec)}
+                **_quality_index(self.quality), **_spec_index(self.spec), **_cache_index(self.moe_cache),
+                **({"stage": self.stage.get("index")} if self.stage else {})}
 
     def path(self, root: Path | None = None) -> Path:
         return (root or results_root()) / "runs" / self.timestamp[:7] / f"{self.run_id}.json"
@@ -126,6 +132,12 @@ def _spec_index(s: dict[str, Any] | None) -> dict[str, Any]:
     if not s:
         return {}
     return {"acceptance_rate": s.get("acceptance_rate"), "mean_accept_len": s.get("mean_accept_len")}
+
+
+def _cache_index(c: dict[str, Any] | None) -> dict[str, Any]:
+    if not c:
+        return {}
+    return {k: c.get(k) for k in ("hit_rate", "uploaded_mib") if c.get(k) is not None}
 
 
 def _peak(mon: dict[str, Any], key: str) -> float | None:

@@ -155,6 +155,21 @@ failed, not from a predicted edge (that had cost gemma 25 % TG: moe15 50.8 inste
 * llama-benchy only fetches its prompt book over HTTP (`requests.get`), so the code prompt set is served from a
   local `http.server` for the duration of the run.
 
+**Found while implementing M11 (2026-11-21)** (details in `docs/PARITY.md`, milestone log)
+* **The MoE cache prints its hit / miss counters only when it is freed (a clean exit), and only at `-lv 4`.**
+  llama-server handles only Ctrl+C, so cache servers get their own hidden console and a real Ctrl+C
+  (`proc.send_ctrl_c`); CTRL_BREAK would end them without the counters.
+* llama.cpp's `moe-cache-tune.py` stops its servers with `send_signal(SIGINT)`, which fails on Windows, so
+  `tune moe-cache` runs it through a shim (SIGINT -> Ctrl+C).
+* llama-fit-params counts `--moe-cache-mib`, so the fit check protects cache sweeps too. At ctx 65536 a 6 GiB cache
+  fits only with the default batch (ub4096 + cmoe + mc6144 is NO-FIT), so the stages use `default`.
+* Pinned load modes (`lmN`, `lmD`) put ~19 GB of host experts into private memory. After 8 days of uptime ~35 GiB of
+  commit belonged to no process and the guard stopped every pinned run; a real restart (not a Fast Startup shutdown)
+  freed it. mmap (`lmA`) is not commit, but its PP is 1.8x slower (501 vs 909 t/s).
+* **Acceptance:** on Qwen3.6-35B MTP (ctx 65536) the cache size decides TG: all experts in RAM + a 6 GiB cache at
+  share 0 = 71.7 t/s (88 % hit rate) vs 36.5 for the `moe34` sweet spot without a cache, for -24 % PP. The CPU share
+  makes TG worse at every size here (4 threads).
+
 **Later**
 * Strata as a second engine (managed mode, `/v1/models` probe, API key, `/metrics`), compared with
   a fair protocol (§7). PC capability detection modelled on Strata's (§5.1).
@@ -1926,7 +1941,7 @@ come first:
 | **M8** | `report chart` (parity 5-axis + legacy log import), `report table`, `report prompt` | Chart from new results matches the old chart for the same data; old `.txt` logs still chart. As built: pixel-identical PNG to the bash plotter on the same log; old `.txt` logs and the `_RESULTS/*.html` pages chart; plus `results compare` / `results export --csv` |
 | **M9** | §4.6 `predict` (GGUF expert sizes, `llama-fit-params` grid, roofline TG/PP, calibration from M7 runs) + §9 item 6 `sweep search` (safe side first, stops at the first spill, winner one step back) | After calibration, predicted TG/PP are within ~15 % of measured for 2 models; `sweep search` finds a sweet spot without a single run that spills. As built: `predict`, `results calibrate` (leave-one-out error), `sweep search` (ncmoe / ub stages; K/V and spec stages wait for M10); gemma QAT search: 7 runs, no spill. **Done 2026-11-20** under a performance plan: gemma QAT and Qwen3.6-35B MTP searches without a spill, leave-one-out median 3.9 %, 41/44 within 15 % (the first runs were under Legion Quiet Mode and don't count) |
 | **M10** | §4.5: `quality kld-ref/kld/floor` (llama-perplexity, size preview, wikitext-2 + code corpus, reference fallbacks); `--metrics` on bench servers + `/metrics` delta scraping, spec log parsing, `RunResult.quality` / `.spec` | KLD table for 3 K/V variants of one model, with noise floor; a `sd{2,3,4}mtp` benchy sweep shows acceptance rate + per-position acceptance next to TG As built: `quality kld-ref / kld / floor / list / clean / corpus`, `report spec [--chart]`, `sweep run --with-kld`, benchy `--prompts` / `prompt_sets`, draft-side tokens (`sdmin`, `dK`/`dV`, `dmoe`); quality runs use `-lm mmap`. **Done 2026-11-20:** Qwen3.6-35B MTP KLD (floor < 1e-6): Kq8_Vq8 0.0028, Kf8_Vf8 0.0036, Kq8_Vq4 0.0046, Kq4_Vq4 0.0064; sweep `Qwen36_35B_A3B_UD_Q4_K_M_MTP_spec`: sd3mtp x1.30 TG (acceptance 77 %, .88/.78/.62), sd4mtp slower than no spec (flagged) |
-| **M11** | MoE-cache axes (§4.4): `cmoe/mc/cs/lm*/Kf8` tokens, staged sweeps, server-log cache stats, `tune moe-cache` wrapper | Stage 0–2 sweep for Qwen36 MTP completes; chart shows TG/PP/duration/VRAM/hit rate per variant |
+| **M11** | MoE-cache axes (§4.4): `cmoe/mc/cs/lm*/Kf8` tokens, staged sweeps, server-log cache stats, `tune moe-cache` wrapper | Stage 0–2 sweep for Qwen36 MTP completes; chart shows TG/PP/duration/VRAM/hit rate per variant. As built: `[sweeps.*].stages` with `{best}` / `{winner}` / `{tuned}` (`sweep run --until-stage`), `RunResult.moe_cache` from the server log (cache servers get `-lv 4` and a real Ctrl+C stop, the counters print only at a clean exit), `warmup`, `tune moe-cache` (upstream script through a Windows shim), `report moe-cache [--chart]`. **Done 2026-11-21:** stages 0-2, 18 runs, no spill; winner `cmoe_mc6144_cs0_lmD` TG 71.7 (x1.96 vs 36.5 without a cache, hit rate 88 %), PP 688 vs 909; CPU share and load mode `N` vs `D` don't help on this laptop, pinned PP 1.8x mmap; `tune moe-cache` agrees (share 0, 7360 MiB): `cmoe_mc7360_cs0_lmD` measured TG 75.5 / PP 726. Stages 3-4 (stage 3 changed to configs that fit): `cmoe_mc6144_cs0_lmD_sd3mtp` 81.5, with `Kf8_Vq8` 86.5 (2.4x no cache; KLD 0.0033, small) |
 | **M12** | `eval` (inspect-ai: mmlu_pro, gpqa_diamond, math_aime_24 locally); `eval --remote-client` + `eval import` for SWE-bench from a Linux VM/host (§7.1) | mmlu_pro `--limit 20` completes against background server; a VirtualBox Linux VM reaches the Windows server (`curl /v1/models`), runs a few SWE-bench (Lite/mini) tasks, and `eval import` joins the result with server metrics |
 | **M13** | Retire the bash runner (§10.1): parity checklist complete, final acceptance runs, delete `llama_cpp_benchmark.sh` + `llama_cpp_presets.ini` | Every row in `docs/PARITY.md` is ✓ or "dropped + reason" approved by you; both files removed in one commit, recoverable from git history |
 | **M14** | Runner registry + `StrataRunner` (managed mode, `/v1/models` probe, API key, `/metrics` scrape); Linux AMD/Intel GPU detection | Same benchy sweep runs against llama.cpp and Strata; `results compare` works |

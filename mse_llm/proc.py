@@ -10,6 +10,9 @@ Windows details:
   cleaning up, Windows ends the server and every child (router models) with it. No orphans.
 * A detached server (`presets serve --background`) gets neither, so it outlives mse-llm; it gets a
   hidden console (CREATE_NO_WINDOW), which its children (router model instances) share.
+* `ctrl_c=True` (M11): the process gets its own hidden console instead of a process group, so it can be
+  stopped with a real Ctrl+C (`send_ctrl_c`). llama-server handles only Ctrl+C itself; CTRL_BREAK ends it
+  without cleanup, and the MoE cache prints its hit / miss statistics only when it is freed at a clean exit.
 """
 
 from __future__ import annotations
@@ -220,6 +223,50 @@ def _signal(pid: int) -> None:
             pass
 
 
+_CTRL_C_HELPER = r'''
+import ctypes, sys
+k = ctypes.WinDLL("kernel32", use_last_error=True)
+k.FreeConsole()
+if not k.AttachConsole(int(sys.argv[1])):
+    sys.exit(2)
+k.SetConsoleCtrlHandler(None, True)          # this helper ignores the Ctrl+C it sends
+sys.exit(0 if k.GenerateConsoleCtrlEvent(0, 0) else 3)
+'''
+
+
+def _clear_ctrl_c_ignore() -> None:
+    """Child processes inherit "ignore Ctrl+C" (set for anything started in a new process group, e.g. by an IDE or
+    a CI runner); a child that inherits it never sees the Ctrl+C send_ctrl_c delivers. Clearing it for mse-llm is
+    the normal console state (Python handles Ctrl+C as KeyboardInterrupt)."""
+    try:
+        import ctypes
+
+        ctypes.WinDLL("kernel32").SetConsoleCtrlHandler(None, False)
+    except (OSError, AttributeError):
+        pass
+
+
+def send_ctrl_c(pid: int, timeout: float = 10.0) -> bool:
+    """A real Ctrl+C to pid (POSIX: SIGINT to its group). On Windows a Ctrl+C can only go to every process of a
+    console, so a short helper process attaches to the target's own console (Spawned(ctrl_c=True)) and sends it
+    there; mse-llm's console is never touched. False when it could not be delivered."""
+    if not IS_WINDOWS:
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGINT)
+            return True
+        except (OSError, ProcessLookupError):
+            return False
+    import sys
+
+    try:
+        r = subprocess.run([sys.executable, "-c", _CTRL_C_HELPER, str(pid)], stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return r.returncode == 0
+
+
 # ---------------------------------------------------------------- Windows Job Object
 
 def _job_for(pid: int, *, kill_on_close: bool = True, memory_cap_mib: int | None = None) -> object | None:
@@ -296,8 +343,9 @@ class Spawned:
 
     def __init__(self, argv: list[str], *, log_path: Path | None = None, sink: LineSink | None = None,
                  detached: bool = False, env: dict[str, str] | None = None, cwd: Path | None = None,
-                 keep_lines: int = 400, memory_cap_mib: int | None = None) -> None:
+                 keep_lines: int = 400, memory_cap_mib: int | None = None, ctrl_c: bool = False) -> None:
         self.memory_cap_mib = memory_cap_mib
+        self.ctrl_c = ctrl_c and not detached
         self.argv = argv
         self.log_path = log_path
         self.sink = sink
@@ -347,8 +395,12 @@ class Spawned:
 
     async def _start_attached(self) -> None:
         kw: dict = {}
+        if IS_WINDOWS and self.ctrl_c:
+            _clear_ctrl_c_ignore()
         if IS_WINDOWS:
-            kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            # ctrl_c: own hidden console (Ctrl+C in ours still doesn't reach it, and send_ctrl_c can target it);
+            # a new process group would have Ctrl+C disabled
+            kw["creationflags"] = subprocess.CREATE_NO_WINDOW if self.ctrl_c else subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kw["start_new_session"] = True
         self.proc = await asyncio.create_subprocess_exec(
@@ -418,6 +470,13 @@ class Spawned:
         await self._join_reader()
         return rc
 
+    async def _wait_exit(self) -> None:
+        if isinstance(self.proc, subprocess.Popen):
+            while self.proc.poll() is None:
+                await asyncio.sleep(0.2)
+        elif self.proc is not None:
+            await self.proc.wait()
+
     async def _join_reader(self, timeout: float | None = None) -> None:
         """Wait for the output reader. One that stop() cancelled (the process didn't close its pipe in time)
         is not an error: its CancelledError must not look like our own cancellation (Ctrl+C)."""
@@ -432,11 +491,25 @@ class Spawned:
             if not r.cancelled():
                 raise
 
-    async def stop(self, *, grace: float = 5.0, port: int | None = None) -> StopReport:
+    async def stop(self, *, grace: float = 5.0, port: int | None = None, fast: bool = False) -> StopReport:
+        """fast: skip the Ctrl+C of a ctrl_c process (memory guard: kill at once)."""
         if self.proc is None:
             raise ProcError("not started")
-        rep = await asyncio.to_thread(stop_tree, self.pid, grace=grace, port=port, extra=self.started_procs,
-                                      job=self.job, signal_first=not self.detached)
+        sent_ctrl_c = False
+        if self.ctrl_c and not fast and self.returncode is None:
+            sent_ctrl_c = await asyncio.to_thread(send_ctrl_c, self.pid)
+            if sent_ctrl_c:
+                try:
+                    await asyncio.wait_for(asyncio.shield(self._wait_exit()), grace)
+                except TimeoutError:
+                    pass
+        rep = await asyncio.to_thread(stop_tree, self.pid, grace=min(grace, 5.0) if self.ctrl_c else grace, port=port,
+                                      extra=self.started_procs, job=self.job,
+                                      # never CTRL_BREAK a ctrl_c process: it isn't a process group leader,
+                                      # and the event could reach our own console instead
+                                      signal_first=not self.detached and not self.ctrl_c)
+        if sent_ctrl_c and self.returncode is not None and self.pid not in rep.killed:
+            rep.graceful = sorted(set(rep.graceful) | {self.pid})
         if isinstance(self.proc, asyncio.subprocess.Process):
             try:
                 await asyncio.wait_for(self.proc.wait(), 5)

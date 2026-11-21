@@ -85,7 +85,7 @@ class ServerHandle:
     def __init__(self, argv: list[str], *, port: int, client_host: str = "localhost", health_path: str = "/health",
                  ready_timeout: float = 120, log_path=None, sink=None, detached: bool = False,
                  env: dict[str, str] | None = None, grace: float = 5.0, progress=None,
-                 memory_cap_mib: int | None = None) -> None:
+                 memory_cap_mib: int | None = None, ctrl_c: bool = False) -> None:
         from mse_llm.proc import Spawned
 
         self.port = port
@@ -97,7 +97,7 @@ class ServerHandle:
         self.progress = progress
         self.keep = False
         self.proc = Spawned(argv, log_path=log_path, sink=sink, detached=detached, env=env,
-                            memory_cap_mib=memory_cap_mib)
+                            memory_cap_mib=memory_cap_mib, ctrl_c=ctrl_c)
         self.endpoint: Endpoint | None = None
         self.stop_report = None
 
@@ -131,12 +131,13 @@ class ServerHandle:
         self.endpoint = Endpoint(self.base_url, self.port, self.pid, ready)
         return self.endpoint
 
-    async def stop(self):
+    async def stop(self, fast: bool = False):
+        """fast: no Ctrl+C wait for a ctrl_c server (the memory guard stops it at once)."""
         if self.proc.proc is None:
             return None
         if self.stop_report is not None and self.proc.returncode is not None:
             return self.stop_report          # already stopped (e.g. by the memory guard)
-        self.stop_report = await self.proc.stop(grace=self.grace, port=self.port)
+        self.stop_report = await self.proc.stop(grace=self.grace, port=self.port, fast=fast)
         return self.stop_report
 
     async def wait(self) -> int:

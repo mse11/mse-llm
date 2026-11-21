@@ -97,6 +97,9 @@ def server_command(cfg: Config, model: str, variant: Variant | str | None, ctx: 
     argv += ["--fit", fit, "--host", eng.host, "--port", str(port or eng.port)]
     if metrics:
         argv += ["--metrics"]          # /metrics: speculative-decoding acceptance per draft position (§4.5)
+    if v.moe_cache_mib and purpose != "serve":
+        # the MoE cache logs its size and its hit / miss counters as llama info lines, hidden below -lv 4 (§4.4)
+        argv += ["-lv", "4"]
     cmd.argv = argv
     return _finish(cmd, "llama-server", helps, snap)
 

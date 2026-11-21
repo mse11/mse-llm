@@ -74,6 +74,10 @@ class ModelCfg(_Model):
     serve_extra: dict[str, Any] = Field(default_factory=dict)
     default_serve: str | None = None
     default_serve_spec: str | None = None
+    # the variant run_SERVER_* / llama_cpp_presets.ini serve, when default_serve was changed since (parity tests;
+    # dropped with the bash script in M13)
+    bash_serve: str | None = None
+    bash_serve_spec: str | None = None
     notes: str | None = None
 
     @property
@@ -146,6 +150,11 @@ class SweepCfg(_Model):
     # benchy: prompt sets, one job per set: prose (benchy's book) | code (llama.cpp sources) | wikitext2 | FILE.
     # Speculative-decoding acceptance depends on the content, so spec sweeps run both (§4.5).
     prompt_sets: list[str] = Field(default_factory=list)
+    # M11 (§4.4): staged sweep, one list of patterns per stage; `{best}` / `{winner}` / `{tuned}` placeholders
+    # come from the stages before (see mse_llm/staged.py). `variants` / `matrix` are not used with stages.
+    stages: list[list[str]] = Field(default_factory=list)
+    goal: Literal["tg", "pp", "both"] = "tg"    # what picks a stage winner (the MoE cache mainly changes TG)
+    warmup: int | None = None               # benchy, mc* variants: tokens generated before benchy (cache warm)
     task: str | None = None                 # eval: inspect task (M12)
     bash: str | None = None                 # the bash function this sweep replaces
     notes: str | None = None

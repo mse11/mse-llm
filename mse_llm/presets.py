@@ -441,6 +441,9 @@ def generate(cfg: Config, engine: str | None = None) -> tuple[str, list[str]]:
         if m.ctx:
             lines.append(f"ctx-size = {m.ctx}")
         seen = {"model", "alias", "ctx-size"}
+        if v.load_mode and v.load_mode != d.load_mode:   # Variant.flags() leaves the load mode to the command builder
+            seen.add("load-mode")
+            lines.append(f"load-mode = {v.load_mode}")
         for k, val in _flags_to_keys(vflags):
             if k not in seen:
                 seen.add(k)

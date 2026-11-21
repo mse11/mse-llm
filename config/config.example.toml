@@ -98,8 +98,14 @@ url = "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF"
 tags = ["moe", "tool", "reasoning", "mtp"]
 ctx = 65536
 serve_extra = { jinja = true, reasoning-format = "none", temp = 0.3 }
-default_serve = "fa_Kq8_Vq8_default_moe34"
-default_serve_spec = "fa_Kq8_Vq4_default_moe34_sd2mtp"   # the commented-out alternative in run_SERVER_*
+# M11 (2026-11-21): all experts in RAM + a 7360 MiB MoE cache, share 0, pinned (dio): TG 75.5 / PP 726 at ctx 65536
+# vs 36.5 / 909 for moe34 (`tune moe-cache` recommendation, checked with benchy; VRAM peak 11042 MiB). Needs ~19 GB
+# of free commit for the pinned experts.
+default_serve = "fa_Kq8_Vq8_default_cmoe_mc7360_cs0_lmD"
+bash_serve = "fa_Kq8_Vq8_default_moe34"                  # what run_SERVER_* and llama_cpp_presets.ini serve
+# M11 stage 4 winner: + MTP drafting (sd3) and f8 K: TG 86.5 / PP 667 (acceptance ~66 %, KLD 0.0033 "small")
+default_serve_spec = "fa_Kf8_Vq8_default_cmoe_mc6144_cs0_lmD_sd3mtp"
+bash_serve_spec = "fa_Kq8_Vq4_default_moe34_sd2mtp"      # the commented-out alternative in run_SERVER_*
 notes = "24.1 GB file. Bench notes (ctx 65536): moe34 Vq4 SWEETSPOT; moe33 sporadic PC freezes; moe30 PC freeze."
 
 [models.Qwen36_28B_REAP20_A3B_Q4_K_M]
@@ -198,6 +204,36 @@ pp = [2048]
 tg = [128]
 prompt_sets = ["prose", "code"]
 variants = ["fa_Kq8_Vq8_default_moe34", "fa_Kq8_Vq8_default_moe34_sd{2,3,4}mtp"]
+
+[sweeps.Qwen36_35B_A3B_UD_Q4_K_M_MTP_moecache]
+# M11 (§4.4): MoE expert cache, staged; each stage starts from the winner of the ones before ({best} / {winner},
+# mse_llm/staged.py). The cache is used for small batches only (decode, drafting), so the goal is TG; PP at a short
+# and a long prompt shows it stays the same. Cache runs warm the cache first (512 generated tokens), and their server
+# is stopped with Ctrl+C so the cache prints its hit rate. llama-bench has no --moe-cache-*, so this is benchy.
+# The same template fits gemma_4_26B_A4b_QAT_UD_Q4_K_XL (baseline b2048_ub2048_moe16, spec moe21_sd4mtp),
+# Qwen36_28B_REAP20_A3B_Q4_K_M (b4096_ub4096_moe41) and GLM (moe49).
+model = "Qwen36_35B_A3B_UD_Q4_K_M_MTP"
+tool = "benchy"
+ctx = 65536
+pp = [512, 8192]
+tg = [512]
+runs = 2
+warmup = 512
+goal = "tg"
+stages = [
+  # 0. baselines: the serve sweet spot (no cache), with each load mode
+  ["fa_Kq8_Vq8_default_moe34_lm{N,A,D}"],
+  # 1. all experts in RAM + cache size, at share 0 and 0.95, pinned (none) and dio
+  ["fa_Kq8_Vq8_default_cmoe_mc{2048,4096,6144}_cs{0,95}_lm{N,D}"],
+  # 2. share at the best size and load mode of stage 1
+  ["fa_Kq8_Vq8_default_cmoe_mc{best}_cs{0,50,80,90,95}_lm{best}"],
+  # 3. cache on top of partial offload, then MTP drafting on top of the stage-2 winner. moe34 + a 6 GiB cache is
+  #    NO-FIT at ctx 65536 (-205 MiB, with sd3mtp -818), so the partial offload starts at moe37.
+  #    "{winner}" keeps the stage-2 winner in the race (stored run, nothing new), so stage 4 starts from the best one.
+  ["{winner}", "fa_Kq8_Vq8_default_moe{37,38}_mc{best}_cs{best}_lm{best}", "{winner}_sd3mtp"],
+  # 4. K/V type at the winner
+  ["{winner}_K{q8,f8}_V{q8,f8,q4}"],
+]
 
 [sweeps.Qwen36_28B_REAP20_A3B_Q4_K_M_bench]
 bash = "run_BENCH_Qwen36_28B_REAP20_A3B_Q4_K_M_CTX_cuda_flash_CFG_MOE_on_x_CTX_x"

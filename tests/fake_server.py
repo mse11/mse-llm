@@ -1,10 +1,12 @@
 """Fake llama-server / router for lifecycle tests (stdlib only).
 
-    python fake_server.py --port N [--children K] [--ready-after S] [--exit-after S] [--models a,b]
+    python fake_server.py --port N [--children K] [--ready-after S] [--exit-after S] [--models a,b] [--moe-cache]
 
 /health answers 503 until --ready-after seconds have passed, then 200. --children starts K child
 processes that just sleep (like router model instances), so tree kill can be checked. With --models
-it also answers the router API: GET /models, POST /models/load, POST /models/unload.
+it also answers the router API: GET /models, POST /models/load, POST /models/unload. With --moe-cache it prints
+llama.cpp's MoE cache lines: the size at start, the hit / miss counters only on Ctrl+C (a clean exit), and answers
+POST /completion (the cache warm-up).
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ def main() -> None:
     ap.add_argument("--ready-after", type=float, default=0.0)
     ap.add_argument("--exit-after", type=float, default=None)
     ap.add_argument("--models", default="")
+    ap.add_argument("--moe-cache", action="store_true")
     a = ap.parse_args()
     t0 = time.monotonic()
     models = {m: "unloaded" for m in a.models.split(",") if m}
@@ -56,6 +59,10 @@ def main() -> None:
         def do_POST(self):   # noqa: N802
             n = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(n) or b"{}")
+            if self.path == "/completion":
+                k = int(body.get("n_predict") or 16)
+                self._send(200, {"content": "x" * k, "timings": {"predicted_n": k, "predicted_per_second": 33.3}})
+                return
             name = body.get("model")
             if name not in models:
                 self._send(400, {"error": {"message": f"model {name} not found"}})
@@ -74,10 +81,19 @@ def main() -> None:
     print("llama_context: n_ctx         = 4096", flush=True)
     print("load_tensors: offloaded 10/10 layers to GPU", flush=True)
     print("some noise line", flush=True)
+    if a.moe_cache:
+        print("0.22.292.526 I impl:      CUDA0 MoE cache size =  4093.19 MiB for 18662.00 MiB of host experts, "
+              "95% of the misses on the CPU", flush=True)
+        print("0.22.292.541 I impl: 37 layers, q5_K:  2069 slots (21.8%, 7.0 tokens worth)", flush=True)
     if a.exit_after is not None:
         threading.Timer(a.exit_after, lambda: (print("exiting on purpose", flush=True), srv.shutdown())).start()
     try:
         srv.serve_forever()
+    except KeyboardInterrupt:
+        if a.moe_cache:
+            print("1.59.474.044 I llama_moe_cache: ubatch <= 8: hits = 300, misses = 100 (80 on the CPU), "
+                  "hit rate = 75.00%, uploaded = 12.50 MiB", flush=True)
+        sys.exit(0)
     finally:
         for k in kids:
             k.kill()

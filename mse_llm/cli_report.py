@@ -133,7 +133,8 @@ def report_table(ctx: Ctx, sweep_, model, tool, build, run_ids, last, all_runs, 
     else:
         cols = ["variant", "ctx", "pp_tps", "tg_tps", "ttft_ms", "vram_peak_mib", "server_shared_mib", "spill_mib",
                 "duration_s", "status", "note"]
-        extra = [c for c in ("acceptance", "mean_kld", "same_top_p") if any(r.get(c) is not None for r in rows)]
+        extra = [c for c in ("acceptance", "mean_kld", "same_top_p", "hit_rate")
+                 if any(r.get(c) is not None for r in rows)]
         cols[4:4] = extra
     best_pp, best_tg = (None, None) if per_test else (best(rows, "pp_tps"), best(rows, "tg_tps"))
 
@@ -146,7 +147,7 @@ def report_table(ctx: Ctx, sweep_, model, tool, build, run_ids, last, all_runs, 
             return s
         if c in ("vram_peak_mib", "server_shared_mib", "spill_mib", "duration_s"):
             return _fmt(v, 0)
-        if c in ("acceptance", "same_top_p"):
+        if c in ("acceptance", "same_top_p", "hit_rate"):
             return "" if v is None else f"{v * 100:.1f} %"
         if c == "mean_kld":
             return "" if v is None else f"{v:.5f}"
@@ -207,6 +208,59 @@ def report_spec(ctx: Ctx, sweep_, model, tool, build, run_ids, last, all_runs, w
     console.print("[dim]acceptance = accepted / drafted; len = tokens per target-model step (1 + accepted / "
                   "steps); per pos = accepted at draft position N / steps (under ~0.3 a longer draft stops "
                   "paying off).[/]")
+    if png:
+        console.print(f"[green]✓[/] chart → [bold]{escape(str(png))}[/]")
+
+
+@report.command("moe-cache")
+@_select_options
+@click.option("--chart", "with_chart", is_flag=True,
+              help="Also write the PNG (TG, PP, duration, VRAM, hit rate, uploaded MiB per variant).")
+@click.option("-o", "--out", type=click.Path(dir_okay=False), default=None,
+              help="PNG path (default: results/reports/<name>/<name>-moe-cache.png).")
+@json_option
+@pass_ctx
+def report_moe_cache(ctx: Ctx, sweep_, model, tool, build, run_ids, last, all_runs, with_chart, out) -> None:
+    """MoE expert cache (§4.4): TG, PP at a short and a long prompt, peak VRAM, hit rate, uploaded MiB and PCIe per
+    variant; the runs without a cache are the baselines (grey in the chart)."""
+    from mse_llm.report import reports_dir
+    from mse_llm.report.moe_cache import cache_rows, chart
+
+    sel = _select(ctx, sweep_, model, tool or "benchy", build, run_ids, last, all_runs,
+                  statuses=("ok", "failed", "aborted"))
+    rows = cache_rows(sel.runs)
+    if not any(r["mc"] is not None or r["hit_rate"] is not None for r in rows):
+        raise click.ClickException("no MoE cache runs among the selected ones (benchy runs of mc* variants)")
+    png = None
+    if with_chart:
+        name = sweep_ or sel.title
+        png = chart(rows, Path(out) if out else reports_dir(name) / f"{Path(name).name}-moe-cache.png",
+                    title=sel.title)
+    if ctx.json:
+        click.echo(json.dumps({"rows": rows, "png": str(png) if png else None}, indent=2))
+        return
+    best_tg = max((r["tg_tps"] for r in rows if r["status"] == "ok" and r["tg_tps"]), default=None)
+    base_tg = max((r["tg_tps"] for r in rows if r["status"] == "ok" and r["mc"] is None and r["tg_tps"]),
+                  default=None)
+    t = Table("stage", "variant", "TG t/s", "PP short", "PP long", "VRAM peak", "cache MiB", "hit rate", "uploaded",
+              "PCIe RX", "status", title=sel.title)
+    for r in rows:
+        tg = _fmt(r["tg_tps"], 2) + (" ★" if r["tg_tps"] is not None and r["tg_tps"] == best_tg else "")
+        if r["mc"] is not None and base_tg and r["tg_tps"] and r["tg_tps"] < base_tg:
+            tg = f"[red]{tg}[/]"
+        st = r["status"] if not r["invalid_config"] else "invalid config"
+        t.add_row("-" if r["stage"] is None else str(r["stage"]), escape(r["variant"]), tg,
+                  _fmt(r["pp_short_tps"]), _fmt(r["pp_long_tps"]), _fmt(r["vram_peak_mib"], 0),
+                  _fmt(r["cache_mib"], 0), "-" if r["hit_rate"] is None else f"{r['hit_rate'] * 100:.1f} %",
+                  _fmt(r["uploaded_mib"], 0), _fmt(r["pcie_rx_mean_mbs"], 0), escape(st))
+    console.print(t)
+    console.print("[dim]★ best TG; red = a cache run slower than the best run without a cache. hit rate / uploaded: "
+                  "small batches (ubatch <= 8), whole server run incl. the warm-up; PCIe RX: mean MB/s while it "
+                  "ran.[/]")
+    for r in rows:
+        if r["mc"] is not None and r["hit_rate"] is None and r["status"] == "ok":
+            console.print(f"[yellow]![/] {escape(r['variant'])}: no hit / miss counters (the server did not exit "
+                          "cleanly)")
     if png:
         console.print(f"[green]✓[/] chart → [bold]{escape(str(png))}[/]")
 

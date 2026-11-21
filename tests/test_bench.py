@@ -250,7 +250,7 @@ def test_cli_sweep_list_show_and_dry_run(store):
     r = CliRunner().invoke(main, ["--json", "sweep", "list"])
     assert r.exit_code == 0, r.output
     names = {s["name"] for s in json.loads(r.output)}
-    assert "omnicoder_9b_bench" in names and len(names) == 10      # 9 bash functions + the M10 spec sweep
+    assert "omnicoder_9b_bench" in names and len(names) == 11      # 9 bash functions + the M10 spec + M11 cache sweeps
     r = CliRunner().invoke(main, ["sweep", "run", "Qwen36_35B_A3B_UD_Q4_K_M_MTP_bench", "--dry-run"])
     assert r.exit_code == 0, r.output
     assert "2 job(s) to run, 8 skipped" in r.output

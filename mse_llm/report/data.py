@@ -78,8 +78,8 @@ def chart_row(r: rs.RunResult) -> ChartRow:
 # ---------------------------------------------------------------- table / CSV
 
 TABLE_COLS = ("run_id", "tool", "model", "variant", "ctx", "pp_tps", "pp_std", "tg_tps", "tg_std", "ttft_ms",
-              "acceptance", "mean_accept_len", "mean_kld", "same_top_p", "vram_peak_mib", "server_shared_mib",
-              "spill_mib", "duration_s", "fit", "status", "note", "build")
+              "acceptance", "mean_accept_len", "mean_kld", "same_top_p", "hit_rate", "vram_peak_mib",
+              "server_shared_mib", "spill_mib", "duration_s", "fit", "status", "note", "build")
 
 
 def table_row(r: rs.RunResult) -> dict[str, Any]:
@@ -91,6 +91,7 @@ def table_row(r: rs.RunResult) -> dict[str, Any]:
             "acceptance": (r.spec or {}).get("acceptance_rate"),
             "mean_accept_len": (r.spec or {}).get("mean_accept_len"),
             "mean_kld": (r.quality or {}).get("mean_kld"), "same_top_p": (r.quality or {}).get("same_top_p"),
+            "hit_rate": (r.moe_cache or {}).get("hit_rate"),
             "vram_peak_mib": _peak(r, "vram_used_mib") or None,
             "server_shared_mib": _peak(r, "proc_shared_mib") or None, "spill_mib": spill,
             "duration_s": r.duration_s, "fit": (r.fit or {}).get("verdict"), "status": r.status,
